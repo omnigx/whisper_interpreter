@@ -1,0 +1,54 @@
+{
+  "name": "whisper-interpreter",
+  "version": "0.1.0",
+  "description": "Real-time dictation & AI-assisted translation for simultaneous interpreters",
+  "main": "./out/main/index.js",
+  "author": "whisper-interpreter",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "dist": "npm run build && electron-builder --win"
+  },
+  "dependencies": {
+    "@ricky0123/vad-web": "^0.0.30",
+    "electron-store": "^11.0.2",
+    "modern-ahocorasick": "^2.0.4",
+    "onnxruntime-web": "^1.27.0",
+    "papaparse": "^5.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/node": "^24.2.1",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.1.9",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "^43.4.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.1.11",
+    "typescript": "~5.8.0",
+    "vite": "^7.3.6"
+  },
+  "build": {
+    "appId": "com.whisper.interpreter",
+    "productName": "Whisper Interpreter",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  }
+}

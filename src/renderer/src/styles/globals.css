@@ -1,0 +1,104 @@
+@import 'tailwindcss';
+
+:root {
+  --bg-deep: #0f1419;
+  --bg-panel: #161d27;
+  --bg-elevated: #1c2633;
+  --border: #2a3544;
+  --text: #e8eef6;
+  --text-muted: #8b9bb0;
+  --accent: #3d9cfd;
+  --accent-soft: rgba(61, 156, 253, 0.15);
+  --source: #7dd3fc;
+  --target: #86efac;
+  --term: #fbbf24;
+  --danger: #f87171;
+  --font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-size: 16px;
+  --zoom-scale: 1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg-deep);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.subtitle-body {
+  background: transparent !important;
+}
+
+.panel-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3a4a5e transparent;
+}
+
+.panel-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb {
+  background: #3a4a5e;
+  border-radius: 3px;
+}
+
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * Subtitle window: never set -webkit-app-region on .lyric-window root.
+ * Drag is only on the top strip in SubtitleView; content uses .no-drag.
+ */
+.lyric-window .no-drag,
+.lyric-window button,
+.lyric-window select,
+.lyric-window input,
+.lyric-window .custom-scrollbar {
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
+/* Subtitle panes: macOS-like floating scrollbar */
+.custom-scrollbar {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+}
+
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.5);
+}

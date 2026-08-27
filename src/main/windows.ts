@@ -1,0 +1,301 @@
+import { app, BrowserWindow, clipboard, ipcMain, screen, session } from 'electron'
+import { join } from 'path'
+
+const isDev = !app.isPackaged
+
+let mainWindow: BrowserWindow | null = null
+let subtitleWindow: BrowserWindow | null = null
+
+const FULL_MIN = { width: 900, height: 560 }
+const FULL_DEFAULT = { width: 1280, height: 800 }
+/** Width unchanged; height fits ~5 records × 2 panes (~30px/record + chrome). */
+const SUBTITLE_SIZE = { width: 1000, height: 350 }
+const SUBTITLE_MIN = { width: 640, height: 240 }
+
+function getPreloadPath(): string {
+  return join(__dirname, '../preload/index.mjs')
+}
+
+function loadMainRenderer(win: BrowserWindow): void {
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+function loadSubtitleRenderer(win: BrowserWindow): void {
+  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
+    const base = process.env['ELECTRON_RENDERER_URL'].replace(/\/$/, '')
+    win.loadURL(`${base}/#/subtitle`)
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/subtitle' })
+  }
+}
+
+function grantMediaPermissions(): void {
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    if (permission === 'media' || permission === 'mediaKeySystem') {
+      callback(true)
+      return
+    }
+    callback(false)
+  })
+
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    return permission === 'media' || permission === 'mediaKeySystem'
+  })
+}
+
+/** Disable Chromium background throttling before ready. */
+export function applyBackgroundKeepaliveSwitches(): void {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+}
+
+function notifyMainSubtitleOpen(isOpen: boolean): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('subtitle-window-state', isOpen)
+  }
+}
+
+export function createSubtitleWindow(): BrowserWindow {
+  if (subtitleWindow && !subtitleWindow.isDestroyed()) {
+    subtitleWindow.show()
+    subtitleWindow.focus()
+    notifyMainSubtitleOpen(true)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('subtitle-window-opened')
+    }
+    return subtitleWindow
+  }
+
+  const { width, height, x, y } = screen.getPrimaryDisplay().workArea
+  const subWidth = Math.min(SUBTITLE_SIZE.width, Math.floor(width * 0.9))
+  const subHeight = SUBTITLE_SIZE.height
+
+  subtitleWindow = new BrowserWindow({
+    width: subWidth,
+    height: subHeight,
+    minWidth: SUBTITLE_MIN.width,
+    minHeight: SUBTITLE_MIN.height,
+    x: x + Math.round((width - subWidth) / 2),
+    y: y + Math.round(height - subHeight - 50),
+    show: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    resizable: true,
+    skipTaskbar: false,
+    backgroundColor: '#00000000',
+    title: 'Whisper Interpreter — Subtitle',
+    webPreferences: {
+      preload: getPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false
+    }
+  })
+
+  subtitleWindow.setAlwaysOnTop(true, 'screen-saver')
+  subtitleWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // Never call setIgnoreMouseEvents — it would block native -webkit-app-region drag.
+
+  subtitleWindow.on('ready-to-show', () => {
+    subtitleWindow?.show()
+    notifyMainSubtitleOpen(true)
+    // Ask main renderer to push latest store snapshot
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('subtitle-window-opened')
+    }
+  })
+
+  subtitleWindow.on('closed', () => {
+    subtitleWindow = null
+    notifyMainSubtitleOpen(false)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('subtitle-window-closed')
+    }
+  })
+
+  loadSubtitleRenderer(subtitleWindow)
+  return subtitleWindow
+}
+
+export function closeSubtitleWindow(): void {
+  if (subtitleWindow && !subtitleWindow.isDestroyed()) {
+    subtitleWindow.close()
+  }
+}
+
+export function toggleSubtitleWindow(isOpen: boolean): boolean {
+  if (isOpen) {
+    createSubtitleWindow()
+    return true
+  }
+  closeSubtitleWindow()
+  return false
+}
+
+export function isSubtitleWindowOpen(): boolean {
+  return Boolean(subtitleWindow && !subtitleWindow.isDestroyed())
+}
+
+export function createMainWindow(): BrowserWindow {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.focus()
+    return mainWindow
+  }
+
+  mainWindow = new BrowserWindow({
+    width: FULL_DEFAULT.width,
+    height: FULL_DEFAULT.height,
+    minWidth: FULL_MIN.width,
+    minHeight: FULL_MIN.height,
+    show: false,
+    frame: false,
+    transparent: false,
+    hasShadow: true,
+    backgroundColor: '#0f1419',
+    title: 'Whisper Interpreter',
+    webPreferences: {
+      preload: getPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false
+    }
+  })
+
+  mainWindow.on('ready-to-show', () => {
+    mainWindow?.show()
+  })
+
+  const emitMaximized = (): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window:maximized-changed', mainWindow.isMaximized())
+    }
+  }
+  mainWindow.on('maximize', emitMaximized)
+  mainWindow.on('unmaximize', emitMaximized)
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+    // Tear down satellite window with main
+    if (subtitleWindow && !subtitleWindow.isDestroyed()) {
+      subtitleWindow.close()
+    }
+    subtitleWindow = null
+  })
+
+  loadMainRenderer(mainWindow)
+  return mainWindow
+}
+
+/** @deprecated alias */
+export function createFullWindow(): BrowserWindow {
+  return createMainWindow()
+}
+
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow
+}
+
+export function registerWindowIpc(): void {
+  ipcMain.handle('subtitle:toggle', (_event, isOpen: boolean) => {
+    return toggleSubtitleWindow(Boolean(isOpen))
+  })
+
+  ipcMain.handle('subtitle:is-open', () => isSubtitleWindowOpen())
+
+  /** Main renderer → main process → subtitle renderer (dumb display) */
+  ipcMain.on('subtitle:push-state', (_event, state: unknown) => {
+    if (subtitleWindow && !subtitleWindow.isDestroyed()) {
+      subtitleWindow.webContents.send('subtitle:state', state)
+    }
+  })
+
+  // Back-compat
+  ipcMain.handle('window:open-subtitle', () => toggleSubtitleWindow(true))
+  ipcMain.handle('window:close-subtitle', () => {
+    toggleSubtitleWindow(false)
+    return true
+  })
+  ipcMain.handle('window:set-subtitle-mode', (_e, isOpen: boolean) =>
+    toggleSubtitleWindow(Boolean(isOpen))
+  )
+  ipcMain.handle('window:get-subtitle-mode', () => isSubtitleWindowOpen())
+  ipcMain.handle('window:open-full', () => {
+    // Focus main; do not close subtitle (multi-window: both can coexist)
+    mainWindow?.show()
+    mainWindow?.focus()
+    return true
+  })
+
+  ipcMain.handle('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    win?.minimize()
+  })
+
+  ipcMain.handle('window:maximize-toggle', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return false
+    if (win.isMaximized()) {
+      win.unmaximize()
+      return false
+    }
+    win.maximize()
+    return true
+  })
+
+  ipcMain.handle('window:is-maximized', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return Boolean(win?.isMaximized())
+  })
+
+  ipcMain.handle('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    // Closing from subtitle should only close subtitle
+    if (win === subtitleWindow) {
+      closeSubtitleWindow()
+      return
+    }
+    win?.close()
+  })
+
+  ipcMain.on('set-window-locked', (event, isLocked: unknown) => {
+    const locked = Boolean(isLocked)
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    // Unlock → edge resize allowed; lock → size + (CSS) position locked
+    win.setResizable(!locked)
+  })
+
+  ipcMain.handle('clipboard:write-text', (_event, text: unknown) => {
+    clipboard.writeText(typeof text === 'string' ? text : String(text ?? ''))
+  })
+}
+
+export function setupAppLifecycle(): void {
+  app.whenReady().then(() => {
+    grantMediaPermissions()
+    createMainWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow()
+      } else {
+        mainWindow?.show()
+      }
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+}
