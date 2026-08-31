@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+
+/** UI-side session history cap (≈2h of dense interpretation); logs keep everything */
+const MAX_SESSION_SEGMENTS = 800
 import {
   DEFAULT_SETTINGS,
   derivePipelineMode,
@@ -30,10 +33,16 @@ interface AppState {
   /** LLM async term extract (CSV matcher always on; this only gates LLM) */
   isLlmExtractionEnabled: boolean
   isListening: boolean
+  /** Sync-recording footer indicator */
+  recordingUiStatus: 'ready' | 'recording' | 'saving'
   pipelineStatus: string
   /** STT WebSocket link while a listening session is active */
   sttLinkStatus: 'idle' | 'connected' | 'disconnected' | 'reconnecting'
   inputLevel: number
+  /** Debug meters — throttled, subscribed only by AudioControlPanel */
+  pcmRms: number
+  framesEmitted: number
+  contextSampleRate: number
   vadSegmentCount: number
   /** True after user or auto degrade switched to local engines */
   degraded: boolean
@@ -54,9 +63,11 @@ interface AppState {
   setTranslationDirection: (direction: TranslationDirection) => void
   setWindowMode: (mode: WindowMode) => void
   setListening: (v: boolean) => void
+  setRecordingUiStatus: (status: 'ready' | 'recording' | 'saving') => void
   setPipelineStatus: (s: string) => void
   setSttLinkStatus: (s: AppState['sttLinkStatus']) => void
   setInputLevel: (level: number) => void
+  setAudioStats: (stats: Partial<Pick<AppState, 'pcmRms' | 'framesEmitted' | 'contextSampleRate'>>) => void
   setPartialText: (text: string) => void
   bumpVadSegment: () => void
   upsertTranscript: (seg: TranscriptSegment) => void
@@ -84,9 +95,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   terms: [],
   isLlmExtractionEnabled: false,
   isListening: false,
+  recordingUiStatus: 'ready',
   pipelineStatus: '待命 · 等待麦克风接入',
   sttLinkStatus: 'idle',
   inputLevel: 0,
+  pcmRms: 0,
+  framesEmitted: 0,
+  contextSampleRate: 16000,
   vadSegmentCount: 0,
   degraded: false,
   windowMode: 'full',
@@ -271,16 +286,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   setWindowMode: (mode) => set({ windowMode: mode }),
 
   setListening: (v) => set({ isListening: v }),
+  setRecordingUiStatus: (recordingUiStatus) => set({ recordingUiStatus }),
   setPipelineStatus: (pipelineStatus) => set({ pipelineStatus }),
   setSttLinkStatus: (sttLinkStatus) => set({ sttLinkStatus }),
   setInputLevel: (inputLevel) => set({ inputLevel }),
+  setAudioStats: (stats) => set(stats),
   setPartialText: (partialText) => set({ partialText }),
   bumpVadSegment: () => set((s) => ({ vadSegmentCount: s.vadSegmentCount + 1 })),
 
   upsertTranscript: (seg) =>
     set((s) => {
       const idx = s.transcripts.findIndex((t) => t.id === seg.id)
-      if (idx === -1) return { transcripts: [...s.transcripts, seg] }
+      if (idx === -1) {
+        // Cap history: full text is preserved in the JSONL logs; UI keeps a window
+        const next = [...s.transcripts, seg]
+        if (next.length > MAX_SESSION_SEGMENTS) next.splice(0, next.length - MAX_SESSION_SEGMENTS)
+        return { transcripts: next }
+      }
       const next = [...s.transcripts]
       next[idx] = seg
       return { transcripts: next }
@@ -289,7 +311,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   upsertTranslation: (seg) =>
     set((s) => {
       const idx = s.translations.findIndex((t) => t.id === seg.id)
-      if (idx === -1) return { translations: [...s.translations, seg] }
+      if (idx === -1) {
+        const next = [...s.translations, seg]
+        if (next.length > MAX_SESSION_SEGMENTS) next.splice(0, next.length - MAX_SESSION_SEGMENTS)
+        return { translations: next }
+      }
       const next = [...s.translations]
       next[idx] = seg
       return { translations: next }

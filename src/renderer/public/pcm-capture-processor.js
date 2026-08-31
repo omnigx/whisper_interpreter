@@ -1,6 +1,7 @@
 /**
  * AudioWorklet: capture mono float32 frames, downsample to 16 kHz, emit Int16 PCM.
- * Runs on the audio rendering thread.
+ * Runs on the audio rendering thread — zero per-sample JS array operations here;
+ * all buffering uses preallocated typed arrays to avoid GC pauses/glitches.
  */
 class PcmCaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -9,17 +10,23 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this.targetRate = opts.targetSampleRate || 16000
     this.inputRate = sampleRate
     this.ratio = this.inputRate / this.targetRate
-    this._residual = []
     this._frameSamples = Math.max(320, Math.floor(this.targetRate * 0.02)) // 20ms
-    this._outBuffer = []
+    this._frame = new Float32Array(this._frameSamples)
+    this._frameFill = 0
+    this._dsBuf = new Float32Array(0)
+    this._pcm = new Int16Array(this._frameSamples)
   }
 
+  /** Linear-interpolation resample into a reused scratch buffer. */
   _downsample(input) {
     if (Math.abs(this.ratio - 1) < 0.001) {
       return input
     }
     const outLen = Math.floor(input.length / this.ratio)
-    const out = new Float32Array(outLen)
+    if (this._dsBuf.length !== outLen) {
+      this._dsBuf = new Float32Array(outLen)
+    }
+    const out = this._dsBuf
     for (let i = 0; i < outLen; i++) {
       const srcPos = i * this.ratio
       const i0 = Math.floor(srcPos)
@@ -30,48 +37,50 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     return out
   }
 
-  _floatToInt16(floatSamples) {
-    const out = new Int16Array(floatSamples.length)
-    for (let i = 0; i < floatSamples.length; i++) {
-      const s = Math.max(-1, Math.min(1, floatSamples[i]))
-      out[i] = s < 0 ? (s * 0x8000) | 0 : (s * 0x7fff) | 0
-    }
-    return out
-  }
-
   process(inputs) {
     const ch0 = inputs[0] && inputs[0][0]
     if (!ch0 || ch0.length === 0) {
       return true
     }
 
-    const down = this._downsample(ch0)
-    for (let i = 0; i < down.length; i++) {
-      this._outBuffer.push(down[i])
-    }
-
-    while (this._outBuffer.length >= this._frameSamples) {
-      const frame = this._outBuffer.splice(0, this._frameSamples)
-      const floatFrame = Float32Array.from(frame)
-      let sum = 0
-      for (let i = 0; i < floatFrame.length; i++) {
-        sum += floatFrame[i] * floatFrame[i]
+    const src = this._downsample(ch0)
+    let i = 0
+    while (i < src.length) {
+      const n = Math.min(this._frameSamples - this._frameFill, src.length - i)
+      this._frame.set(src.subarray(i, i + n), this._frameFill)
+      this._frameFill += n
+      i += n
+      if (this._frameFill === this._frameSamples) {
+        this._emitFrame()
+        this._frameFill = 0
       }
-      const rms = Math.sqrt(sum / floatFrame.length)
-      const pcm = this._floatToInt16(floatFrame)
-      this.port.postMessage(
-        {
-          type: 'pcm',
-          samples: pcm,
-          sampleRate: this.targetRate,
-          rms,
-          timestamp: currentTime * 1000
-        },
-        [pcm.buffer]
-      )
     }
 
     return true
+  }
+
+  _emitFrame() {
+    const floatFrame = this._frame
+    const pcm = this._pcm
+    let sum = 0
+    for (let i = 0; i < floatFrame.length; i++) {
+      const s = Math.max(-1, Math.min(1, floatFrame[i]))
+      sum += s * s
+      pcm[i] = s < 0 ? (s * 0x8000) | 0 : (s * 0x7fff) | 0
+    }
+    const rms = Math.sqrt(sum / floatFrame.length)
+    this.port.postMessage(
+      {
+        type: 'pcm',
+        samples: pcm,
+        sampleRate: this.targetRate,
+        rms,
+        timestamp: currentTime * 1000
+      },
+      [pcm.buffer]
+    )
+    // pcm.buffer was transferred; allocate a fresh one for the next frame
+    this._pcm = new Int16Array(this._frameSamples)
   }
 }
 

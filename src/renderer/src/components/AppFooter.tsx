@@ -37,6 +37,20 @@ export function AppFooter({
 
   const engineDot = degraded || mode === 'offline' ? 'bg-orange-400' : 'bg-emerald-400'
 
+  const recordingUiStatus = useAppStore((s) => s.recordingUiStatus)
+  const recordingDot =
+    recordingUiStatus === 'recording'
+      ? 'bg-red-400'
+      : recordingUiStatus === 'saving'
+        ? 'bg-amber-400'
+        : 'bg-emerald-400'
+  const recordingLabel =
+    recordingUiStatus === 'recording'
+      ? '正在录音'
+      : recordingUiStatus === 'saving'
+        ? '正在保存'
+        : '录音就绪'
+
   const handleDegrade = (): void => {
     degradeToOffline()
     if (isListening) onRestartListening?.()
@@ -62,6 +76,11 @@ export function AppFooter({
 
       <span className="truncate">
         STT {settings.stt.provider} · LLM {activeLlm?.model ?? '—'}
+      </span>
+
+      <span className="inline-flex items-center gap-1.5">
+        <span className={`h-1.5 w-1.5 rounded-full ${recordingDot}`} />
+        {recordingLabel}
       </span>
 
       <span className="hidden text-[var(--text-muted)]/60 sm:inline">

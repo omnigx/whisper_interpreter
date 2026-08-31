@@ -6,6 +6,9 @@ import {
   setupAppLifecycle
 } from './windows'
 import { registerSecureApiKeyIpc } from './secureApiKeys'
+import { registerSessionIoIpc, registerSessionQuitGuard } from './sessionIO'
+import { registerSttLauncher } from './sttLauncher'
+import { registerAppConfigIpc } from './appConfig'
 
 // Must run before app is ready
 applyBackgroundKeepaliveSwitches()
@@ -27,5 +30,9 @@ if (!gotLock) {
   })
   registerWindowIpc()
   registerSecureApiKeyIpc()
+  registerAppConfigIpc()
+  registerSessionIoIpc()
+  registerSessionQuitGuard()
+  registerSttLauncher()
   setupAppLifecycle()
 }

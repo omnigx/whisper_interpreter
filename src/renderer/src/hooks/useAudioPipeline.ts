@@ -9,7 +9,7 @@ import type { VadEngine } from '../services/pipeline'
 import { createSttClient, type SttClient } from '../services/stt'
 import { createLlmClient, type LlmClient } from '../services/llm'
 import type { SileroVadHandle } from '../services/pipeline'
-import { getActiveLlm, isCloudStt, isFasterWhisperStt, isUtteranceLocalStt, fasterWhisperModelSize } from '@shared/types'
+import { getActiveLlm, isCloudStt, isFasterWhisperStt, isUtteranceLocalStt, fasterWhisperModelSize, clampVadSilenceMs, localSttLauncherKey } from '@shared/types'
 import { useAppStore } from '../stores/appStore'
 import { useNetworkMonitor } from './useNetworkMonitor'
 import {
@@ -21,14 +21,19 @@ import {
 import { detectLanguage } from '../utils/detectLanguage'
 import { ensureLlmApiKey } from '../services/secureApiKeys'
 import { abortPendingTermExtract } from '../utils/termExtractControl'
+import { createThrottledEmitter } from '../utils/streamingUpdate'
+import { logSessionEvent } from '../services/sessionLogger'
+import { publishMeter } from '../services/meterBus'
+import {
+  appendSyncRecordingPcm,
+  isSyncRecordingActive,
+  startSyncRecording,
+  stopSyncRecording
+} from '../services/syncRecorder'
 
 export function useAudioPipeline(): {
   devices: MediaDeviceInfo[]
   refreshDevices: () => Promise<void>
-  inputLevel: number
-  pcmRms: number
-  framesEmitted: number
-  contextSampleRate: number
   vadSegmentCount: number
   vadEngine: VadEngine | null
   startListening: () => Promise<void>
@@ -37,7 +42,9 @@ export function useAudioPipeline(): {
   setVolumeLive: (v: number) => void
   setGainLive: (g: number) => void
   setMaxSentenceLive: (ms: number) => void
+  setSilenceLive: (ms: number) => void
   setDeviceLive: (deviceId: string) => Promise<void>
+  setSyncRecordingLive: (enabled: boolean) => Promise<void>
 } {
   const isListening = useAppStore((s) => s.isListening)
   const setListening = useAppStore((s) => s.setListening)
@@ -45,13 +52,13 @@ export function useAudioPipeline(): {
   const setSttLinkStatus = useAppStore((s) => s.setSttLinkStatus)
   const setAudio = useAppStore((s) => s.setAudio)
   const setInputLevel = useAppStore((s) => s.setInputLevel)
+  const setAudioStats = useAppStore((s) => s.setAudioStats)
   const bumpVadSegment = useAppStore((s) => s.bumpVadSegment)
   const upsertTranscript = useAppStore((s) => s.upsertTranscript)
   const setPartialText = useAppStore((s) => s.setPartialText)
   const upsertTranslation = useAppStore((s) => s.upsertTranslation)
   const removeTranslation = useAppStore((s) => s.removeTranslation)
   const degradeToOffline = useAppStore((s) => s.degradeToOffline)
-  const inputLevel = useAppStore((s) => s.inputLevel)
   const vadSegmentCount = useAppStore((s) => s.vadSegmentCount)
 
   const { cloudReachable, network } = useNetworkMonitor()
@@ -72,11 +79,12 @@ export function useAudioPipeline(): {
   const historyRef = useRef<string[]>([])
   /** Prevent overlapping start/restart */
   const startingRef = useRef(false)
+  /** Serializes drain loops across stop/start cycles (stale loops must not clobber the flag) */
+  const drainGenRef = useRef(0)
+  /** Debug stats cadence (500ms) — meters themselves go through meterBus, not the store */
+  const lastStatsPushRef = useRef(0)
 
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
-  const [pcmRms, setPcmRms] = useState(0)
-  const [framesEmitted, setFramesEmitted] = useState(0)
-  const [contextSampleRate, setContextSampleRate] = useState(16000)
   const [vadEngine, setVadEngine] = useState<VadEngine | null>(null)
 
   useEffect(() => {
@@ -113,6 +121,7 @@ export function useAudioPipeline(): {
   const drainTranslateQueue = useCallback(async (): Promise<void> => {
     if (translatingRef.current) return
     translatingRef.current = true
+    const drainGen = ++drainGenRef.current
 
     while (translateQueueRef.current.length > 0) {
       const job = translateQueueRef.current.shift()!
@@ -135,6 +144,8 @@ export function useAudioPipeline(): {
       const id = `tr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
       const linkedSourceId = job.sourceId ?? id
       currentTranslationIdRef.current = id
+      const translateStartedAt = performance.now()
+      const throttledUi = createThrottledEmitter(80)
 
       const ac = new AbortController()
       abortControllerRef.current = ac
@@ -165,16 +176,19 @@ export function useAudioPipeline(): {
           userContent,
           (chunk) => {
             assembled += chunk
-            if (isEchoRepetition(job.unit, assembled)) return
-            upsertTranslation({
-              id,
-              sourceId: linkedSourceId,
-              text: assembled,
-              streaming: true,
-              timestamp: Date.now(),
-              lang: detected,
-              direction: actualDirection,
-              type: 'translation'
+            // Coalesce SSE deltas: one store write per ~80ms instead of per token
+            throttledUi.emit(() => {
+              if (isEchoRepetition(job.unit, assembled)) return
+              upsertTranslation({
+                id,
+                sourceId: linkedSourceId,
+                text: assembled,
+                streaming: true,
+                timestamp: Date.now(),
+                lang: detected,
+                direction: actualDirection,
+                type: 'translation'
+              })
             })
           },
           ac.signal,
@@ -200,6 +214,13 @@ export function useAudioPipeline(): {
           lang: detected,
           direction: actualDirection,
           type: 'translation'
+        })
+        logSessionEvent({
+          module: 'LLM',
+          model_name: llmCfg.model || llm.label || llmCfg.id,
+          content: assembled,
+          latency: Math.round(performance.now() - translateStartedAt),
+          source_text: job.unit
         })
         historyRef.current = [...historyRef.current, job.unit].slice(-20)
         setPipelineStatus(
@@ -249,7 +270,10 @@ export function useAudioPipeline(): {
       }
     }
 
-    translatingRef.current = false
+    // A newer drain (restart) owns the flag now — stale loop exits silently
+    if (drainGenRef.current === drainGen) {
+      translatingRef.current = false
+    }
   }, [removeTranslation, setPipelineStatus, upsertTranslation])
 
   // Hot-swap LLM / model: abort in-flight request, re-queue source, show divider
@@ -304,6 +328,7 @@ export function useAudioPipeline(): {
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
     translatingRef.current = false
+    drainGenRef.current += 1
     sttRef.current?.notifyUtteranceEnd?.()
     captureRef.current?.stop()
     sttRef.current?.disconnect()
@@ -315,10 +340,23 @@ export function useAudioPipeline(): {
     setPartialText('')
     setListening(false)
     setInputLevel(0)
-    setPcmRms(0)
+    publishMeter({ inputLevel: 0, pcmRms: 0 })
+    lastStatsPushRef.current = 0
     setVadEngine(null)
     setSttLinkStatus('idle')
-    setPipelineStatus('已停止监听')
+    logSessionEvent({ module: 'SYS', model_name: '', content: 'session stop' })
+    void (async () => {
+      const res = await stopSyncRecording()
+      if (res.path) {
+        setPipelineStatus(
+          res.ok
+            ? `已停止监听 · 录音已保存 ${res.path}`
+            : `已停止监听 · 录音转码失败：${res.error ?? ''}（已保留 ${res.path}）`
+        )
+      } else {
+        setPipelineStatus('已停止监听')
+      }
+    })()
   }, [setInputLevel, setListening, setPartialText, setPipelineStatus, setSttLinkStatus])
 
   const startListening = useCallback(async () => {
@@ -347,15 +385,21 @@ export function useAudioPipeline(): {
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
     translatingRef.current = false
+    drainGenRef.current += 1
+    lastStatsPushRef.current = 0
     if (llmCfg) {
       llmRef.current = createLlmClient(llmCfg)
     }
+    // New JSONL pair per listening session (research workflow: log ↔ recording alignment)
+    window.whisperApi?.rotateSessionLog?.()
 
     setPipelineStatus('正在加载 Silero-VAD…')
 
     const utteranceMode = isUtteranceLocalStt(sttConfig.provider)
     const fasterWhisper = isFasterWhisperStt(sttConfig.provider)
-    const vadSilenceMs = utteranceMode ? 800 : 300
+    // One user-facing sentence-break pause for every mode (VAD redemption +
+    // Paraformer stream settle), live-adjustable via the 断句停顿 slider
+    const vadSilenceMs = clampVadSilenceMs(audio.vadSilenceMs)
     const vadMaxMs = utteranceMode
       ? audio.maxSentenceMs
       : Math.min(10000, audio.maxSentenceMs)
@@ -383,6 +427,11 @@ export function useAudioPipeline(): {
           bumpVadSegment()
           const dur = Math.max(0, Math.round(seg.endMs - seg.startMs))
           const count = useAppStore.getState().vadSegmentCount
+          logSessionEvent({
+            module: 'VAD',
+            model_name: 'silero',
+            content: `#${count} ${seg.reason} ${dur}ms`
+          })
           const link = useAppStore.getState().sttLinkStatus
           // Don't overwrite disconnect / reconnect banners with VAD chatter
           if (link === 'connected') {
@@ -413,6 +462,14 @@ export function useAudioPipeline(): {
           isFinal: true,
           timestamp: Date.now(),
           lang
+        })
+        const sttModel =
+          useAppStore.getState().settings.stt.model ||
+          useAppStore.getState().settings.stt.provider
+        logSessionEvent({
+          module: 'STT',
+          model_name: sttModel,
+          content: text
         })
         runTranslate(text, result.utteranceId)
       }
@@ -480,6 +537,25 @@ export function useAudioPipeline(): {
         }
       }
 
+      // Local engines: make sure the backend process is up (auto-launched on
+      // app boot for the default engine; spawn now if it died / was switched)
+      const engineKey = localSttLauncherKey(sttConfig.provider)
+      if (engineKey) {
+        setPipelineStatus(`正在连接 ${sttLabel} · 确认本地引擎…`)
+        try {
+          const ensured = await window.whisperApi?.ensureSttEngine?.(engineKey, 60000)
+          if (ensured && !ensured.ok) {
+            setPipelineStatus(
+              `本地引擎未就绪（${ensured.error ?? '超时'}）· 仍将尝试连接…`
+            )
+          }
+          // 6 GB VRAM fits one resident engine — drop others we spawned
+          void window.whisperApi?.stopOtherSttEngines?.(engineKey)
+        } catch {
+          /* launcher unavailable — fall through to plain connect */
+        }
+      }
+
       await client.connect()
       setSttLinkStatus('connected')
       if (client.mode === 'stream') {
@@ -490,6 +566,15 @@ export function useAudioPipeline(): {
       }
       sttRef.current = client
 
+      if (audio.syncRecording) {
+        const rec = await startSyncRecording(audio.recordingFormat ?? 'wav')
+        if (!rec.ok) {
+          setPipelineStatus(`同步录音启动失败：${rec.error ?? 'unknown'}`)
+        }
+      } else {
+        useAppStore.getState().setRecordingUiStatus('ready')
+      }
+
       await capture.start({
         volume: audio.volume,
         gain: audio.gain,
@@ -497,12 +582,23 @@ export function useAudioPipeline(): {
         onPcm: (packet) => {
           vadRef.current?.pushPcm(packet)
           sttRef.current?.sendPcm(packet)
+          appendSyncRecordingPcm(packet.samples)
         },
         onLevel: (snap: AudioLevelSnapshot) => {
-          setInputLevel(snap.inputLevel)
-          setPcmRms(snap.pcmRms)
-          setFramesEmitted(snap.framesEmitted)
-          setContextSampleRate(snap.contextSampleRate)
+          // Hot path: meters paint via direct DOM writes from meterBus —
+          // no React state, no quantization, full 50ms cadence.
+          publishMeter({ inputLevel: snap.inputLevel, pcmRms: snap.pcmRms })
+          // Cold path: store keeps a 500ms debug snapshot (panel text + future consumers)
+          const now = performance.now()
+          if (now - lastStatsPushRef.current >= 500) {
+            lastStatsPushRef.current = now
+            setInputLevel(snap.inputLevel)
+            setAudioStats({
+              pcmRms: snap.pcmRms,
+              framesEmitted: snap.framesEmitted,
+              contextSampleRate: snap.contextSampleRate
+            })
+          }
         },
         onError: (err) => {
           setPipelineStatus(`麦克风错误：${err.message}`)
@@ -515,8 +611,15 @@ export function useAudioPipeline(): {
       startingRef.current = false
       const engineLabel = vad.engine === 'silero' ? 'Silero' : 'Energy'
       const llmLabel = llmCfg?.label ?? 'LLM?'
+      logSessionEvent({
+        module: 'SYS',
+        model_name: `${sttConfig.provider} + ${llmCfg?.model ?? 'none'}`,
+        content: `session start · VAD=${vad.engine}${isSyncRecordingActive() ? ' · sync-recording' : ''}`
+      })
       setPipelineStatus(
-        `监听中 · ${engineLabel}-VAD(${vadSilenceMs}ms) → ${sttLabel} → ${llmLabel}`
+        `监听中 · ${engineLabel}-VAD(${vadSilenceMs}ms) → ${sttLabel} → ${llmLabel}${
+          isSyncRecordingActive() ? ' · 同步录音中' : ''
+        }`
       )
       void refreshDevices()
     } catch (e) {
@@ -641,9 +744,19 @@ export function useAudioPipeline(): {
         useAppStore.getState().settings.stt.provider
       )
       sttRef.current?.configure?.({
-        maxUtteranceMs: utterance ? clamped : Math.min(10000, clamped),
-        silenceHoldMs: utterance ? 800 : 300
+        maxUtteranceMs: utterance ? clamped : Math.min(10000, clamped)
       })
+    },
+    [setAudio]
+  )
+
+  const setSilenceLive = useCallback(
+    (ms: number) => {
+      const clamped = clampVadSilenceMs(ms)
+      setAudio({ vadSilenceMs: clamped })
+      // Silero redemption (utterance flush) + Paraformer stream settle
+      vadRef.current?.setRedemptionMs?.(clamped)
+      sttRef.current?.configure?.({ silenceHoldMs: clamped })
     },
     [setAudio]
   )
@@ -658,13 +771,41 @@ export function useAudioPipeline(): {
     [isListening, setAudio]
   )
 
+  const setSyncRecordingLive = useCallback(
+    async (enabled: boolean) => {
+      setAudio({ syncRecording: enabled })
+      if (!useAppStore.getState().isListening) return
+      if (enabled) {
+        if (isSyncRecordingActive()) return
+        const fmt =
+          useAppStore.getState().settings.audio.recordingFormat ?? 'wav'
+        const res = await startSyncRecording(fmt)
+        if (!res.ok) {
+          setPipelineStatus(`同步录音启动失败：${res.error ?? 'unknown'}`)
+          setAudio({ syncRecording: false })
+          return
+        }
+        useAppStore.getState().setRecordingUiStatus('recording')
+        setPipelineStatus('同步录音已开启')
+        return
+      }
+      const res = await stopSyncRecording()
+      if (res.path) {
+        setPipelineStatus(
+          res.ok
+            ? `同步录音已保存 ${res.path}`
+            : `同步录音转码失败：${res.error ?? ''}（已保留 ${res.path}）`
+        )
+      } else {
+        setPipelineStatus('同步录音已关闭')
+      }
+    },
+    [setAudio, setPipelineStatus]
+  )
+
   return {
     devices,
     refreshDevices,
-    inputLevel,
-    pcmRms,
-    framesEmitted,
-    contextSampleRate,
     vadSegmentCount,
     vadEngine,
     startListening,
@@ -673,6 +814,8 @@ export function useAudioPipeline(): {
     setVolumeLive,
     setGainLive,
     setMaxSentenceLive,
-    setDeviceLive
+    setSilenceLive,
+    setDeviceLive,
+    setSyncRecordingLive
   }
 }

@@ -8,6 +8,8 @@ import { FullSizeMode } from '../pages/FullSizeMode'
 import { SubtitleView } from '../pages/SubtitleView'
 import { useSubtitleBroadcast } from '../hooks/useSubtitleBroadcast'
 import { bootEngineConfig } from '../services/enginePersistence'
+import { useAppStore } from '../stores/appStore'
+import { localSttLauncherKey } from '@shared/types'
 
 function isSubtitleHash(): boolean {
   const h = window.location.hash.replace(/^#/, '')
@@ -50,10 +52,17 @@ function SubtitleSatelliteApp(): React.JSX.Element {
 function MainApp(): React.JSX.Element {
   const [subtitleOpen, setSubtitleOpen] = useState(false)
 
-  useSubtitleBroadcast(true)
+  // Only mirror snapshots while the satellite window actually exists —
+  // otherwise every store update pays a full structured-clone IPC for nothing.
+  useSubtitleBroadcast(subtitleOpen)
 
   useEffect(() => {
-    void bootEngineConfig()
+    void bootEngineConfig().then(() => {
+      // Warm up the default local engine right after settings restore —
+      // model loading takes 10–40 s, so start it before the user clicks 听写.
+      const key = localSttLauncherKey(useAppStore.getState().settings.stt.provider)
+      if (key) void window.whisperApi?.ensureSttEngine?.(key, 120000)
+    })
   }, [])
 
   useEffect(() => {

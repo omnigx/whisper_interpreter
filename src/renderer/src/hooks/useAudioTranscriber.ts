@@ -9,6 +9,7 @@ import {
   type SettleReason
 } from '../services/stt/sensevoice'
 import { SenseVoiceUtteranceClient } from '../services/stt/sensevoiceUtterance'
+import { publishMeter } from '../services/meterBus'
 import {
   defaultSttWebsocketUrl,
   normalizeLocalWsUrl,
@@ -39,7 +40,6 @@ export interface UseAudioTranscriberResult {
   transcripts: string[]
   isRecording: boolean
   connectionStatus: WsConnectionStatus
-  inputLevel: number
   clearTranscripts: () => void
   error: string | null
   isSettling: boolean
@@ -89,7 +89,6 @@ export function useAudioTranscriber(
   const [isSettling, setIsSettling] = useState(false)
   const [connectionStatus, setConnectionStatus] =
     useState<WsConnectionStatus>('disconnected')
-  const [inputLevel, setInputLevel] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   /** Single STT client across renders */
@@ -165,7 +164,7 @@ export function useAudioTranscriber(
     speakingRef.current = false
     silenceAccumMsRef.current = 0
     speechMsRef.current = 0
-    setInputLevel(0)
+    publishMeter({ inputLevel: 0, pcmRms: 0 })
     setIsRecording(false)
   }, [])
 
@@ -276,7 +275,8 @@ export function useAudioTranscriber(
     (pcm: Int16Array, frameMs: number) => {
       if (!recordingRef.current) return
       const rms = computeRmsInt16(pcm)
-      setInputLevel(Math.min(1, rms * 8))
+      // Meter paints imperatively per frame (~50 fps) — no React on this path
+      publishMeter({ inputLevel: Math.min(1, rms * 8), pcmRms: rms })
 
       const { engine: eng, silenceThreshold: thr, silenceMs: hold, maxDuration: maxSec } =
         optsRef.current
@@ -437,10 +437,20 @@ export function useAudioTranscriber(
     }
   }, [engineUrlKey, ensureConnected])
 
+  // Silence-hold change while recording → apply to a live Paraformer client
+  useEffect(() => {
+    if (!recordingRef.current) return
+    const c = clientRef.current
+    if (c instanceof SenseVoiceClient) {
+      c.setSettleParams({ silenceHoldMs: silenceMs })
+    }
+  }, [silenceMs])
+
   // Unmount cleanup only — empty deps intentionally
   useEffect(() => {
     return () => {
       recordingRef.current = false
+      publishMeter({ inputLevel: 0, pcmRms: 0 })
       try {
         workletRef.current?.port.close()
       } catch {
@@ -465,7 +475,6 @@ export function useAudioTranscriber(
     transcripts: finalTranscripts,
     isRecording,
     connectionStatus,
-    inputLevel,
     clearTranscripts,
     error,
     isSettling,

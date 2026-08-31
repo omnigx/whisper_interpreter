@@ -3,8 +3,21 @@ dist
 out
 release
 *.log
+config.json
+logs/
+recordings/
 .env
 .env.*
 !.env.example
 .DS_Store
 Thumbs.db
+
+# STT engine models (multi-GB, keep out of git)
+stt_engines/models/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# TS build info (was accidentally tracked)
+*.tsbuildinfo

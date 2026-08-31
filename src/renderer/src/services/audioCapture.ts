@@ -246,7 +246,7 @@ export function createEnergyVad(
   let collected: Int16Array[] = []
   let collectedSamples = 0
   let segmentCb = onSegment
-  const silenceHoldMs = 300
+  let silenceHoldMs = 300
   const speechThreshold = 0.02
 
   const flush = (reason: VadSegment['reason'], endMs: number): void => {
@@ -311,6 +311,11 @@ export function createEnergyVad(
 
     setMaxSentenceMs(ms) {
       maxMs = clamp(ms, 5000, 30000)
+    },
+
+    /** Same semantic as Silero's setRedemptionMs — silence that ends a sentence */
+    setRedemptionMs(ms) {
+      silenceHoldMs = Math.max(100, ms)
     },
 
     setOnSegment(cb) {

@@ -61,6 +61,8 @@ export interface SttPartialResult {
 export interface SileroVadHandle {
   pushPcm: (packet: PcmPacket) => void
   setMaxSentenceMs: (ms: number) => void
+  /** Live-adjust the silence-hold that ends a sentence (ms) */
+  setRedemptionMs?: (ms: number) => void
   setOnSegment?: (cb: (seg: VadSegment) => void) => void
   reset: () => void
   dispose?: () => void

@@ -1,5 +1,6 @@
 import {
   DEFAULT_SETTINGS,
+  recordingFormatLabelToId,
   type AppSettings,
   type EngineSettings,
   type LlmEndpointConfig,
@@ -119,8 +120,23 @@ export function resetEngineToDefaults(): void {
   }))
 }
 
+/** Apply recording_dir / recording_format from project-root config.json */
+export async function bootRecordingConfig(): Promise<void> {
+  try {
+    const cfg = await window.whisperApi?.getAppConfig?.()
+    if (!cfg) return
+    useAppStore.getState().setAudio({
+      recordingDir: cfg.recording_dir || 'recordings',
+      recordingFormat: recordingFormatLabelToId(cfg.recording_format || '.wav')
+    })
+  } catch {
+    /* keep defaults */
+  }
+}
+
 /** Boot: restore last save, then hydrate encrypted API keys. */
 export async function bootEngineConfig(): Promise<void> {
   restoreEngineConfig()
   await hydrateApiKeysFromSecureStore()
+  await bootRecordingConfig()
 }

@@ -16,8 +16,8 @@ type SavedFontConfig = Pick<
   'chineseFont' | 'westernFont' | 'fontSize' | 'lineHeight' | 'zoomScale'
 >
 
-const WESTERN_VALUES = new Set(WESTERN_FONT_PRESETS.map((p) => p.value))
-const CHINESE_VALUES = new Set(CHINESE_FONT_PRESETS.map((p) => p.value))
+const WESTERN_VALUES = new Set<string>(WESTERN_FONT_PRESETS.map((p) => p.value))
+const CHINESE_VALUES = new Set<string>(CHINESE_FONT_PRESETS.map((p) => p.value))
 
 /** Map legacy / polluted stacks onto pure preset values. */
 function sanitizeFontConfig(partial: Partial<SavedFontConfig>): SavedFontConfig {

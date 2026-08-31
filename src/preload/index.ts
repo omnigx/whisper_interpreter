@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { SubtitleMirrorState } from '../shared/subtitleSync'
+import type { SessionLogEntry } from '../shared/sessionLog'
+import type { RecordingFormatId } from '../shared/types'
 
 const api = {
   /** Open / close the independent floating subtitle BrowserWindow */
@@ -77,6 +79,102 @@ const api = {
   setSubtitleLocked: (isLocked: boolean): void => {
     ipcRenderer.send('set-window-locked', Boolean(isLocked))
   },
+
+  /** Fire-and-forget JSONL session log (main process queue) */
+  appendSessionLog: (entry: SessionLogEntry): void => {
+    ipcRenderer.send('session-log:append', entry)
+  },
+
+  /**
+   * Local STT backend launcher: reuse a running instance (port probe) or
+   * spawn the engine and wait until its WebSocket port accepts connections.
+   */
+  ensureSttEngine: (
+    engine: string,
+    timeoutMs?: number
+  ): Promise<{ ok: boolean; alreadyRunning?: boolean; waitedMs?: number; error?: string }> =>
+    ipcRenderer.invoke('stt-launcher:ensure', engine, timeoutMs),
+
+  /** Stop engine processes this app spawned, except `keep` (VRAM hygiene). */
+  stopOtherSttEngines: (keep: string): Promise<void> =>
+    ipcRenderer.invoke('stt-launcher:stop-others', keep),
+
+  /** Start a new STT/LLM JSONL pair (called when a listening session begins) */
+  rotateSessionLog: (): void => {
+    ipcRenderer.send('session-log:rotate')
+  },
+
+  listSessionLogs: (): Promise<
+    Array<{ name: string; size: number; mtimeMs: number }>
+  > => ipcRenderer.invoke('session-log:list'),
+
+  readSessionLog: (
+    name: string
+  ): Promise<{ ok: boolean; content?: string; error?: string }> =>
+    ipcRenderer.invoke('session-log:read', name),
+
+  clearSessionLogs: (): Promise<{
+    ok: boolean
+    removed: number
+    error?: string
+  }> => ipcRenderer.invoke('session-log:clear'),
+
+  openSessionLogsDir: (): Promise<{
+    ok: boolean
+    error?: string
+    path?: string
+  }> => ipcRenderer.invoke('session-log:open-dir'),
+
+  listRecordings: (): Promise<
+    Array<{
+      name: string
+      size: number
+      mtimeMs: number
+      birthtimeMs: number
+      ext: string
+      durationSec?: number
+    }>
+  > => ipcRenderer.invoke('recordings:list'),
+
+  openRecordingsDir: (): Promise<{
+    ok: boolean
+    error?: string
+    path?: string
+  }> => ipcRenderer.invoke('recordings:open-dir'),
+
+  startSyncRecording: (
+    format: RecordingFormatId
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('sync-recording:start', format),
+
+  /** Int16 LE PCM chunk — non-blocking send */
+  appendRecordingPcm: (pcm: ArrayBuffer | Uint8Array): void => {
+    ipcRenderer.send('sync-recording:pcm', pcm)
+  },
+
+  stopSyncRecording: (): Promise<{
+    ok: boolean
+    path?: string
+    error?: string
+  }> => ipcRenderer.invoke('sync-recording:stop'),
+
+  getAppConfig: (): Promise<{
+    recording_dir: string
+    recording_format: '.wav' | '.mp3 320k' | '.flac'
+  }> => ipcRenderer.invoke('app-config:get'),
+
+  setAppConfig: (
+    partial: Partial<{
+      recording_dir: string
+      recording_format: '.wav' | '.mp3 320k' | '.flac'
+    }>
+  ): Promise<{
+    recording_dir: string
+    recording_format: '.wav' | '.mp3 320k' | '.flac'
+  }> => ipcRenderer.invoke('app-config:set', partial),
+
+  pickRecordingDir: (): Promise<string | null> =>
+    ipcRenderer.invoke('app-config:pick-recording-dir'),
 
   // Back-compat aliases
   setSubtitleMode: (isOpen: boolean): Promise<boolean> =>

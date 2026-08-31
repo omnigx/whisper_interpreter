@@ -65,13 +65,72 @@ export interface DialoguePair {
   timestamp: number
 }
 
+/** Sync-recording export format (temp WAV → ffmpeg). */
+export type RecordingFormatId = 'wav' | 'mp3-192k' | 'mp3-320k' | 'flac'
+
+/** Labels shown in UI / config.json */
+export type RecordingFormatLabel = '.wav' | '.mp3 320k' | '.flac'
+
+export const RECORDING_FORMAT_OPTIONS: Array<{
+  value: RecordingFormatId
+  label: RecordingFormatLabel
+}> = [
+  { value: 'wav', label: '.wav' },
+  { value: 'mp3-320k', label: '.mp3 320k' },
+  { value: 'flac', label: '.flac' }
+]
+
+export function recordingFormatLabelToId(
+  label: string
+): RecordingFormatId {
+  if (label === '.mp3 320k' || label === 'mp3-320k') return 'mp3-320k'
+  if (label === '.flac' || label === 'flac') return 'flac'
+  return 'wav'
+}
+
+export function recordingFormatIdToLabel(
+  id: RecordingFormatId
+): RecordingFormatLabel {
+  if (id === 'mp3-320k' || id === 'mp3-192k') return '.mp3 320k'
+  if (id === 'flac') return '.flac'
+  return '.wav'
+}
+
 export interface AudioSettings {
   volume: number
   gain: number
   sampleRate: 16000
   maxSentenceMs: number
+  /** Silence hold that ends a sentence (VAD redemption / stream settle) */
+  vadSilenceMs: number
   /** empty = system default mic */
   deviceId: string
+  /** Capture PCM while STT is listening (default on) */
+  syncRecording: boolean
+  recordingFormat: RecordingFormatId
+  /** Absolute or project-relative path; default "recordings" */
+  recordingDir: string
+}
+
+/** Bounds for the sentence-break silence slider */
+export const VAD_SILENCE_MIN_MS = 300
+export const VAD_SILENCE_MAX_MS = 2000
+export const VAD_SILENCE_STEP_MS = 50
+
+export function clampVadSilenceMs(ms: number): number {
+  if (!Number.isFinite(ms)) return 800
+  return Math.min(VAD_SILENCE_MAX_MS, Math.max(VAD_SILENCE_MIN_MS, Math.round(ms / VAD_SILENCE_STEP_MS) * VAD_SILENCE_STEP_MS))
+}
+
+/** Local engine keys understood by the main-process STT launcher */
+export type LocalSttEngineKey = 'local-sensevoice' | 'local-paraformer' | 'faster-whisper'
+
+/** Map a STT provider to its backend process (null = cloud / not launchable) */
+export function localSttLauncherKey(provider: SttProviderKind): LocalSttEngineKey | null {
+  if (provider === 'local-sensevoice') return 'local-sensevoice'
+  if (provider === 'local-paraformer') return 'local-paraformer'
+  if (isFasterWhisperStt(provider)) return 'faster-whisper'
+  return null
 }
 
 export interface SttConfig {
@@ -274,7 +333,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     gain: 1,
     sampleRate: 16000,
     maxSentenceMs: 15000,
-    deviceId: ''
+    vadSilenceMs: 800,
+    deviceId: '',
+    syncRecording: true,
+    recordingFormat: 'wav',
+    recordingDir: 'recordings'
   },
   stt: {
     provider: 'local-sensevoice',

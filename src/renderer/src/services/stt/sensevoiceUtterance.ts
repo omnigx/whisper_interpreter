@@ -210,9 +210,8 @@ export class SenseVoiceUtteranceClient {
       return
     }
     if (pcm.length === 0) return
-    const copy = new Int16Array(pcm.length)
-    copy.set(pcm)
-    ws.send(copy.buffer)
+    // flushUtterance() builds a fresh exact-size array — no extra copy needed
+    ws.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength))
   }
 
   private coercePlainText(data: unknown): string {

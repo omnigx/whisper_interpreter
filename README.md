@@ -15,6 +15,12 @@ npm install
 npm run dev
 ```
 
+### 系统依赖（同步录音）
+
+MP3 / FLAC 导出依赖本机已安装的 **ffmpeg**，并加入 `PATH`。仅导出 `.wav` 时不需要 ffmpeg。
+
+会话日志写入项目根目录 `logs/`（打包后为 userData）；录音写入 `recordings/`。
+
 ## 分阶段
 
 1. ✅ 双窗口框架（全尺寸 / 无边框字幕置顶）+ 字体缩放

@@ -98,7 +98,7 @@ export async function createSileroVadAsync(
   let maxMs = clamp(options.maxSentenceMs ?? 15000, 5000, 30000)
   let onSegment = options.onSegment
   const positive = options.positiveSpeechThreshold ?? 0.5
-  const redemptionMs = options.redemptionMs ?? 300
+  let redemptionMs = options.redemptionMs ?? 300
   const minSpeechMs = options.minSpeechMs ?? 250
   void options.negativeSpeechThreshold
 
@@ -107,7 +107,8 @@ export async function createSileroVadAsync(
       `${window.location.origin}/vad/silero_vad_v5.onnx`
     )
 
-    const residual: number[] = []
+    const residual = new Float32Array(FRAME_SAMPLES * 4)
+    let residualLen = 0
     const speechFrames: Float32Array[] = []
     let speaking = false
     let speechStartMs = 0
@@ -115,6 +116,7 @@ export async function createSileroVadAsync(
     let speechMs = 0
     let queue: Promise<void> = Promise.resolve()
     let maxTimer: ReturnType<typeof setTimeout> | null = null
+    let frameErrorLogged = false
 
     const clearMaxTimer = (): void => {
       if (maxTimer != null) {
@@ -163,47 +165,57 @@ export async function createSileroVadAsync(
     }
 
     const processFrame = (frame: Float32Array): void => {
-      queue = queue.then(async () => {
-        const prob = await model.process(frame)
-        options.onSpeechProb?.(prob)
-        const frameMs = (FRAME_SAMPLES / SAMPLE_RATE) * 1000
+      queue = queue
+        .then(async () => {
+          const prob = await model.process(frame)
+          options.onSpeechProb?.(prob)
+          const frameMs = (FRAME_SAMPLES / SAMPLE_RATE) * 1000
 
-        if (prob >= positive) {
-          if (!speaking) {
-            speaking = true
-            speechStartMs = performance.now()
-            speechMs = 0
-            silenceMs = 0
-            clearMaxTimer()
-            maxTimer = setTimeout(() => emit('max-sentence'), maxMs)
-          }
-          speechFrames.push(frame)
-          speechMs += frameMs
-          silenceMs = 0
-          return
-        }
-
-        if (speaking) {
-          speechFrames.push(frame)
-          // Count silence whenever below positive threshold (not only < negative),
-          // otherwise mid-prob noise never settles and final never arrives.
-          if (prob < positive) {
-            silenceMs += frameMs
-            if (silenceMs >= redemptionMs) {
-              if (speechMs >= minSpeechMs) emit('silence')
-              else {
-                speechFrames.length = 0
-                speaking = false
-                silenceMs = 0
-                speechMs = 0
-                clearMaxTimer()
-              }
+          if (prob >= positive) {
+            if (!speaking) {
+              speaking = true
+              speechStartMs = performance.now()
+              speechMs = 0
+              silenceMs = 0
+              clearMaxTimer()
+              maxTimer = setTimeout(() => emit('max-sentence'), maxMs)
             }
-          } else {
+            speechFrames.push(frame)
+            speechMs += frameMs
             silenceMs = 0
+            return
           }
-        }
-      })
+
+          if (speaking) {
+            speechFrames.push(frame)
+            // Count silence whenever below positive threshold (not only < negative),
+            // otherwise mid-prob noise never settles and final never arrives.
+            if (prob < positive) {
+              silenceMs += frameMs
+              if (silenceMs >= redemptionMs) {
+                if (speechMs >= minSpeechMs) emit('silence')
+                else {
+                  speechFrames.length = 0
+                  speaking = false
+                  silenceMs = 0
+                  speechMs = 0
+                  clearMaxTimer()
+                }
+              }
+            } else {
+              silenceMs = 0
+            }
+          }
+        })
+        .catch((err) => {
+          // A single failed frame must not poison the chain — without this
+          // catch every later frame is silently skipped and the VAD dies.
+          if (!frameErrorLogged) {
+            frameErrorLogged = true
+            console.error('[VAD] frame processing failed (later errors suppressed)', err)
+          }
+          model.reset()
+        })
     }
 
     options.onEngine?.('silero')
@@ -212,21 +224,32 @@ export async function createSileroVadAsync(
       engine: 'silero',
       pushPcm(packet: PcmPacket) {
         const f32 = int16ToFloat32(packet.samples)
-        for (let i = 0; i < f32.length; i++) residual.push(f32[i])
-        while (residual.length >= FRAME_SAMPLES) {
-          const frame = Float32Array.from(residual.splice(0, FRAME_SAMPLES))
-          processFrame(frame)
+        let offset = 0
+        while (offset < f32.length) {
+          const n = Math.min(FRAME_SAMPLES - residualLen, f32.length - offset)
+          residual.set(f32.subarray(offset, offset + n), residualLen)
+          residualLen += n
+          offset += n
+          if (residualLen === FRAME_SAMPLES) {
+            // processFrame retains the array in speechFrames — hand it a private
+            // copy of ONLY the filled region (bare slice() would copy all 2048)
+            processFrame(residual.slice(0, FRAME_SAMPLES))
+            residualLen = 0
+          }
         }
       },
       setMaxSentenceMs(ms) {
         maxMs = clamp(ms, 5000, 30000)
+      },
+      setRedemptionMs(ms) {
+        redemptionMs = Math.max(100, ms)
       },
       setOnSegment(cb) {
         onSegment = cb
       },
       reset() {
         clearMaxTimer()
-        residual.length = 0
+        residualLen = 0
         speechFrames.length = 0
         speaking = false
         silenceMs = 0
@@ -235,7 +258,7 @@ export async function createSileroVadAsync(
       },
       dispose() {
         clearMaxTimer()
-        residual.length = 0
+        residualLen = 0
         void model.release()
       }
     }
@@ -251,6 +274,9 @@ export async function createSileroVadAsync(
       setMaxSentenceMs(ms) {
         maxMs = clamp(ms, 5000, 30000)
         energy.setMaxSentenceMs(maxMs)
+      },
+      setRedemptionMs(ms) {
+        energy.setRedemptionMs?.(Math.max(100, ms))
       },
       setOnSegment(cb) {
         onSegment = cb

@@ -1,18 +1,24 @@
+import { useEffect, useRef } from 'react'
+import {
+  VAD_SILENCE_MIN_MS,
+  VAD_SILENCE_MAX_MS,
+  VAD_SILENCE_STEP_MS
+} from '@shared/types'
 import { useAppStore } from '../stores/appStore'
+import { subscribeMeter, type MeterSnapshot } from '../services/meterBus'
 
 interface AudioControlPanelProps {
   devices: MediaDeviceInfo[]
-  inputLevel: number
-  pcmRms: number
-  framesEmitted: number
-  contextSampleRate: number
   vadSegmentCount: number
   vadEngine?: 'silero' | 'energy' | null
   onVolume: (v: number) => void
   onGain: (g: number) => void
   onMaxSentence: (ms: number) => void
+  onSilence: (ms: number) => void
   onDevice: (deviceId: string) => void
   onRefreshDevices: () => void
+  /** Toggle sync recording (may start/stop mid-session) */
+  onSyncRecordingChange?: (enabled: boolean) => void
 }
 
 /** Discrete nonlinear gain steps (ear-friendly). */
@@ -52,49 +58,30 @@ const LABEL = 'text-[10px] tracking-wider text-[var(--text-muted)]'
 
 export function AudioControlPanel({
   devices,
-  inputLevel,
-  pcmRms,
-  framesEmitted,
-  contextSampleRate,
   vadSegmentCount,
   vadEngine,
   onVolume,
   onGain,
   onMaxSentence,
+  onSilence,
   onDevice,
-  onRefreshDevices
+  onRefreshDevices,
+  onSyncRecordingChange
 }: AudioControlPanelProps): React.JSX.Element {
   const audio = useAppStore((s) => s.settings.audio)
+  const setAudio = useAppStore((s) => s.setAudio)
   const isListening = useAppStore((s) => s.isListening)
-  const levelPct = Math.min(100, Math.round(inputLevel * 140))
-  const rmsPct = Math.min(100, Math.round(pcmRms * 400))
+  // Debug text only — meters paint via meterBus without React
+  const framesEmitted = useAppStore((s) => s.framesEmitted)
+  const contextSampleRate = useAppStore((s) => s.contextSampleRate)
   const gainIndex = gainToIndex(audio.gain)
   const gainValue = GAIN_STEPS[gainIndex] ?? audio.gain
+  const syncRecording = Boolean(audio.syncRecording)
 
   return (
     <div className="flex flex-wrap items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 py-2">
       {/* 1. 输入电平 */}
-      <div className="flex w-44 shrink-0 flex-col gap-0.5">
-        <div className={`flex items-center justify-between ${LABEL}`}>
-          <span>输入电平</span>
-          <span className="tabular-nums tracking-normal">{levelPct}%</span>
-        </div>
-        <div className="h-1.5 overflow-hidden rounded bg-[var(--bg-deep)]">
-          <div
-            className={`h-full transition-[width] duration-75 ${
-              levelPct > 85 ? 'bg-red-400' : levelPct > 55 ? 'bg-amber-400' : 'bg-emerald-400'
-            }`}
-            style={{ width: `${isListening ? levelPct : 0}%` }}
-          />
-        </div>
-        <div className="h-0.5 overflow-hidden rounded bg-[var(--bg-deep)]">
-          <div
-            className="h-full bg-[var(--accent)]/70 transition-[width] duration-75"
-            style={{ width: `${isListening ? rmsPct : 0}%` }}
-            title="PCM RMS"
-          />
-        </div>
-      </div>
+      <LevelMeter active={isListening} />
 
       {/* 2. 麦克风 */}
       <div className="flex w-36 shrink-0 flex-col gap-0.5">
@@ -123,9 +110,30 @@ export function AudioControlPanel({
         </div>
       </div>
 
-      {/* 3. Volume | Gain | Segment — equal-width cells */}
-      <div className="flex shrink-0 items-end gap-8">
-        <div className="flex w-40 flex-col gap-0.5">
+      {/* 2b. 同步录音（格式在顶栏「录音设置」中配置） */}
+      <div className="flex shrink-0 flex-col gap-0.5">
+        <span className={LABEL}>同步录音</span>
+        <label className="inline-flex h-[26px] cursor-pointer items-center gap-1.5 text-[11px] text-[var(--text)]">
+          <input
+            type="checkbox"
+            className="accent-[var(--accent)]"
+            checked={syncRecording}
+            onChange={(e) => {
+              const enabled = e.target.checked
+              if (onSyncRecordingChange) {
+                void onSyncRecordingChange(enabled)
+              } else {
+                setAudio({ syncRecording: enabled })
+              }
+            }}
+          />
+          启用
+        </label>
+      </div>
+
+      {/* 3. Volume | Gain | Segment | Sentence pause — last cell fills the row */}
+      <div className="flex min-w-0 flex-1 items-end gap-8">
+        <div className="flex w-40 shrink-0 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>音量 Volume</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -143,7 +151,7 @@ export function AudioControlPanel({
           />
         </div>
 
-        <div className="flex w-40 flex-col gap-0.5">
+        <div className="flex w-40 shrink-0 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>增益 Gain</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -166,7 +174,7 @@ export function AudioControlPanel({
           />
         </div>
 
-        <div className="flex w-40 flex-col gap-0.5">
+        <div className="flex w-40 shrink-0 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>片段 Segment</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -181,6 +189,25 @@ export function AudioControlPanel({
             value={audio.maxSentenceMs / 1000}
             onChange={(e) => onMaxSentence(Number(e.target.value) * 1000)}
             className="w-full accent-[var(--accent)]"
+          />
+        </div>
+
+        <div className="flex min-w-40 flex-1 flex-col gap-0.5">
+          <div className={`flex items-center justify-between ${LABEL}`}>
+            <span>断句停顿</span>
+            <span className="tabular-nums tracking-normal text-[var(--text)]">
+              {(audio.vadSilenceMs / 1000).toFixed(2)}s
+            </span>
+          </div>
+          <input
+            type="range"
+            min={VAD_SILENCE_MIN_MS / 1000}
+            max={VAD_SILENCE_MAX_MS / 1000}
+            step={VAD_SILENCE_STEP_MS / 1000}
+            value={audio.vadSilenceMs / 1000}
+            onChange={(e) => onSilence(Number(e.target.value) * 1000)}
+            className="w-full accent-[var(--accent)]"
+            title="静音达到该时长即断句送译：快语速讲者 0.4–0.6s；一般 0.7–0.9s；非母语/慢速 1.0–1.5s。对整句(SenseVoice/FW)与流式(Paraformer)同时生效。"
           />
         </div>
       </div>
@@ -200,4 +227,66 @@ export function AudioControlPanel({
 
 function TARGET_LABEL(contextRate: number): string {
   return contextRate === 16000 ? '16kHz' : `ctx ${contextRate}Hz→16kHz`
+}
+
+/**
+ * Input-level meter. Bars + percentage are painted imperatively from meterBus
+ * at the capture cadence (50 ms) — zero React re-renders on the hot path, so
+ * the animation stays fluid even though it never touches component state.
+ * React only owns the initial / inactive (0%) state.
+ */
+function LevelMeter({ active }: { active: boolean }): React.JSX.Element {
+  const levelBarRef = useRef<HTMLDivElement>(null)
+  const rmsBarRef = useRef<HTMLDivElement>(null)
+  const pctRef = useRef<HTMLSpanElement>(null)
+
+  useEffect(() => {
+    if (!active) {
+      if (levelBarRef.current) levelBarRef.current.style.width = '0%'
+      if (rmsBarRef.current) rmsBarRef.current.style.width = '0%'
+      if (pctRef.current) pctRef.current.textContent = '0%'
+      return
+    }
+    const paint = (snap: MeterSnapshot): void => {
+      const pct = Math.min(100, Math.round(snap.inputLevel * 140))
+      const bar = levelBarRef.current
+      if (bar) {
+        bar.style.width = `${pct}%`
+        bar.classList.toggle('bg-red-400', pct > 85)
+        bar.classList.toggle('bg-amber-400', pct > 55 && pct <= 85)
+        bar.classList.toggle('bg-emerald-400', pct <= 55)
+      }
+      if (rmsBarRef.current) {
+        rmsBarRef.current.style.width = `${Math.min(100, Math.round(snap.pcmRms * 400))}%`
+      }
+      if (pctRef.current) pctRef.current.textContent = `${pct}%`
+    }
+    return subscribeMeter(paint)
+  }, [active])
+
+  return (
+    <div className="flex w-44 shrink-0 flex-col gap-0.5">
+      <div className={`flex items-center justify-between ${LABEL}`}>
+        <span>输入电平</span>
+        <span ref={pctRef} className="tabular-nums tracking-normal">
+          0%
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded bg-[var(--bg-deep)]">
+        <div
+          ref={levelBarRef}
+          className="h-full bg-emerald-400 transition-[width] duration-[60ms] ease-linear"
+          style={{ width: '0%' }}
+        />
+      </div>
+      <div className="h-0.5 overflow-hidden rounded bg-[var(--bg-deep)]">
+        <div
+          ref={rmsBarRef}
+          className="h-full bg-[var(--accent)]/70 transition-[width] duration-[60ms] ease-linear"
+          style={{ width: '0%' }}
+          title="PCM RMS"
+        />
+      </div>
+    </div>
+  )
 }

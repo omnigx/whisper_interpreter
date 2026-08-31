@@ -7,7 +7,7 @@ import {
   isUtteranceLocalStt,
   normalizeLocalWsUrl
 } from '@shared/types'
-import { SenseVoiceClient } from './sensevoice'
+import { SenseVoiceClient, toSendBuffer } from './sensevoice'
 import { SenseVoiceUtteranceClient } from './sensevoiceUtterance'
 import { FasterWhisperClient } from './fasterWhisper'
 
@@ -316,8 +316,7 @@ function createDeepgramClient(config: SttConfig): SttClient {
     },
     sendPcm(packet) {
       if (ws?.readyState === WebSocket.OPEN) {
-        const copy = new Int16Array(packet.samples)
-        ws.send(copy.buffer)
+        ws.send(toSendBuffer(packet.samples))
       }
     },
     notifyUtteranceEnd() {
@@ -384,8 +383,7 @@ function createGenericStreamingWsClient(config: SttConfig): SttClient {
     },
     sendPcm(packet) {
       if (ws?.readyState === WebSocket.OPEN) {
-        const copy = new Int16Array(packet.samples)
-        ws.send(copy.buffer)
+        ws.send(toSendBuffer(packet.samples))
       }
     }
   }

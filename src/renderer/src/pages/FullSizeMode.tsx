@@ -5,6 +5,7 @@ import { AppFooter } from '../components/AppFooter'
 import { EngineSettingsPanel } from '../components/EngineSettingsPanel'
 import { HeaderDisplaySettings } from '../components/HeaderDisplaySettings'
 import { HeaderEngineSettings } from '../components/HeaderEngineSettings'
+import { HeaderRecordingSettings } from '../components/HeaderRecordingSettings'
 import { LanguageTag } from '../components/LanguageTag'
 import { TermsPanel } from '../components/TermsPanel'
 import { WindowControls } from '../components/WindowControls'
@@ -65,10 +66,6 @@ export function FullSizeMode({
   const {
     devices,
     refreshDevices,
-    inputLevel,
-    pcmRms,
-    framesEmitted,
-    contextSampleRate,
     vadSegmentCount,
     vadEngine,
     startListening,
@@ -77,7 +74,9 @@ export function FullSizeMode({
     setVolumeLive,
     setGainLive,
     setMaxSentenceLive,
-    setDeviceLive
+    setSilenceLive,
+    setDeviceLive,
+    setSyncRecordingLive
   } = useAudioPipeline()
 
   const sourceRef = useRef<HTMLDivElement>(null)
@@ -216,15 +215,7 @@ export function FullSizeMode({
                 : 'bg-[var(--accent-soft)] text-[var(--accent)] hover:bg-[var(--accent)]/25'
             }`}
           >
-            {isListening ? '停止' : '开始听写'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowDictationTest(true)}
-            className="inline-flex h-8 items-center whitespace-nowrap rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 text-xs text-[var(--text)] hover:border-[var(--accent)]"
-          >
-            本地 STT 测试
+            {isListening ? '停止听写' : '开始听写'}
           </button>
 
           <button
@@ -237,7 +228,15 @@ export function FullSizeMode({
             }`}
             title="打开/关闭独立悬浮字幕窗口"
           >
-            字幕模式
+            字幕
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowDictationTest(true)}
+            className="inline-flex h-8 items-center whitespace-nowrap rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 text-xs text-[var(--text)] hover:border-[var(--accent)]"
+          >
+            测试
           </button>
 
           <button
@@ -256,6 +255,7 @@ export function FullSizeMode({
             清空
           </button>
 
+          <HeaderRecordingSettings />
           <HeaderEngineSettings />
           <HeaderDisplaySettings />
           <WindowControls />
@@ -264,17 +264,15 @@ export function FullSizeMode({
 
       <AudioControlPanel
         devices={devices}
-        inputLevel={inputLevel}
-        pcmRms={pcmRms}
-        framesEmitted={framesEmitted}
-        contextSampleRate={contextSampleRate}
         vadSegmentCount={vadSegmentCount}
         vadEngine={vadEngine}
         onVolume={setVolumeLive}
         onGain={setGainLive}
         onMaxSentence={setMaxSentenceLive}
+        onSilence={setSilenceLive}
         onDevice={(id) => void setDeviceLive(id)}
         onRefreshDevices={() => void refreshDevices()}
+        onSyncRecordingChange={(enabled) => void setSyncRecordingLive(enabled)}
       />
 
       {isListening &&

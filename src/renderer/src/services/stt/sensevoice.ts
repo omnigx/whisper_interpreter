@@ -232,9 +232,7 @@ export class SenseVoiceClient {
     const ws = this.ws
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     if (pcm.length === 0) return
-    const copy = new Int16Array(pcm.length)
-    copy.set(pcm)
-    ws.send(copy.buffer)
+    ws.send(toSendBuffer(pcm))
   }
 
   sendIsFinal(): void {
@@ -510,6 +508,14 @@ export function float32ToInt16(floatSamples: Float32Array): Int16Array {
     out[i] = s < 0 ? (s * 0x8000) | 0 : (s * 0x7fff) | 0
   }
   return out
+}
+
+/** Exact-size buffers (worklet transfers / fresh merges) are sent zero-copy. */
+export function toSendBuffer(pcm: Int16Array): ArrayBuffer {
+  if (pcm.byteOffset === 0 && pcm.byteLength === pcm.buffer.byteLength) {
+    return pcm.buffer as ArrayBuffer
+  }
+  return pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength)
 }
 
 export function concatInt16(chunks: Int16Array[]): Int16Array {
