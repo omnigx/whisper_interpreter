@@ -21,3 +21,8 @@ __pycache__/
 
 # TS build info (was accidentally tracked)
 *.tsbuildinfo
+
+# IDE / AI-session local artifacts (dev dialogue history stays private)
+.specstory/
+.cursorindexingignore
+.cursor/
