@@ -4,6 +4,13 @@ import {
   DEFAULT_CHINESE_FONT,
   DEFAULT_WESTERN_FONT
 } from '@shared/subtitleSync'
+import {
+  SUBTITLE_POSITION_ORDER,
+  isSubtitleHeightPreset,
+  isSubtitlePositionPreset,
+  type SubtitleHeightPreset,
+  type SubtitlePositionPreset
+} from '@shared/types'
 import { LanguageTag } from '../components/LanguageTag'
 import { buildDialogueHistory } from '../utils/dialogueHistory'
 import { detectLanguage } from '../utils/detectLanguage'
@@ -20,6 +27,12 @@ interface SubtitleLocalPrefs {
   fontSize: number
   lineHeight: number
   backgroundOpacity: number
+  /** Window placement / height presets (applied via main-process setBounds) */
+  position: SubtitlePositionPreset
+  height: SubtitleHeightPreset
+  /** Palette ids — see BG_PRESETS / TEXT_PRESETS */
+  bgColor: string
+  textColor: string
 }
 
 const STORAGE_KEY = 'whisper-subtitle-prefs'
@@ -29,7 +42,60 @@ const MAX_FONT = 36
 const DEFAULT_PREFS: SubtitleLocalPrefs = {
   fontSize: 16,
   lineHeight: 1,
-  backgroundOpacity: 60
+  backgroundOpacity: 60,
+  position: 'bottom-center',
+  height: 'standard',
+  bgColor: 'black',
+  textColor: 'theme'
+}
+
+/**
+ * Background palette. Dark hues keep the bright text readable even at low
+ * opacity (contrast survives blending with the slide beneath); light hues
+ * pair with dark text and want high opacity.
+ */
+const BG_PRESETS = [
+  { id: 'black', label: '纯黑', color: '#000000' },
+  { id: 'navy', label: '深蓝', color: '#0B1E3D' },
+  { id: 'forest', label: '深绿', color: '#0A2E23' },
+  { id: 'graphite', label: '深灰', color: '#1F2430' },
+  { id: 'amber', label: '淡黄', color: '#FDE68A' },
+  { id: 'white', label: '纯白', color: '#F5F7FA' }
+] as const
+
+/**
+ * Text palette. 'theme' keeps the stock look (near-white source / green
+ * target); the rest override every content color uniformly.
+ */
+const TEXT_PRESETS = [
+  { id: 'theme', label: '默认', color: null },
+  { id: 'white', label: '纯白', color: '#FFFFFF' },
+  { id: 'sky', label: '亮浅蓝', color: '#7DD3FC' },
+  { id: 'mint', label: '亮绿', color: '#6EE7B7' },
+  { id: 'yellow', label: '亮黄', color: '#FDE047' },
+  { id: 'black', label: '黑', color: '#111827' }
+] as const
+
+const POSITION_LABELS: Record<SubtitlePositionPreset, string> = {
+  'bottom-center': '屏幕中下方',
+  'top-center': '顶部极简',
+  'left-column': '屏幕左侧竖条',
+  'right-column': '屏幕右侧竖条'
+}
+
+function bgPresetColor(id: string): string {
+  return BG_PRESETS.find((p) => p.id === id)?.color ?? '#000000'
+}
+
+function textPresetColor(id: string): string | null {
+  return TEXT_PRESETS.find((p) => p.id === id)?.color ?? null
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 function loadPrefs(): SubtitleLocalPrefs {
@@ -56,7 +122,17 @@ function loadPrefs(): SubtitleLocalPrefs {
         Number(parsed.backgroundOpacity) ?? DEFAULT_PREFS.backgroundOpacity,
         0,
         100
-      )
+      ),
+      position: isSubtitlePositionPreset(parsed.position)
+        ? parsed.position
+        : DEFAULT_PREFS.position,
+      height: isSubtitleHeightPreset(parsed.height) ? parsed.height : DEFAULT_PREFS.height,
+      bgColor: BG_PRESETS.some((p) => p.id === parsed.bgColor)
+        ? (parsed.bgColor as string)
+        : DEFAULT_PREFS.bgColor,
+      textColor: TEXT_PRESETS.some((p) => p.id === parsed.textColor)
+        ? (parsed.textColor as string)
+        : DEFAULT_PREFS.textColor
     }
   } catch {
     return { ...DEFAULT_PREFS }
@@ -78,6 +154,10 @@ function clamp(n: number, min: number, max: number): number {
 /**
  * Split-pane floating subtitle: source top / translation bottom.
  * Display-only — data comes from main window via IPC.
+ *
+ * Locked mode turns the window into a pure overlay: everything passes mouse
+ * through except the top-right hotspot (buttons), which temporarily lifts
+ * click-through while hovered.
  */
 export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.Element {
   const { partialText, transcripts, translations, isListening } = state
@@ -96,6 +176,8 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
   const settingsRootRef = useRef<HTMLDivElement>(null)
   const prefsRef = useRef(prefs)
   prefsRef.current = prefs
+  /** Click-through hotspot state: true while the pointer is over the buttons */
+  const hotspotActiveRef = useRef(false)
 
   useClickOutside(settingsRootRef, settingsOpen, () => setSettingsOpen(false))
 
@@ -108,9 +190,16 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
     savePrefs(prefs)
   }, [prefs])
 
+  // Lock = fixed geometry + mouse click-through (see windows.ts)
   useEffect(() => {
+    if (!isLocked) hotspotActiveRef.current = false
     window.whisperApi?.setSubtitleLocked?.(isLocked)
   }, [isLocked])
+
+  // Apply placement preset (also runs on mount → restores saved geometry)
+  useEffect(() => {
+    window.whisperApi?.setSubtitleGeometry?.(prefs.position, prefs.height)
+  }, [prefs.position, prefs.height])
 
   /** Ctrl + wheel font zoom on both scroll panes (passive: false). */
   useEffect(() => {
@@ -152,6 +241,34 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
     })
   }
 
+  const cyclePosition = (): void => {
+    setPrefs((prev) => {
+      const idx = SUBTITLE_POSITION_ORDER.indexOf(prev.position)
+      const nextPos =
+        SUBTITLE_POSITION_ORDER[(idx + 1) % SUBTITLE_POSITION_ORDER.length]!
+      // 顶部极简 preset = slim height by definition
+      return { ...prev, position: nextPos, height: nextPos === 'top-center' ? 'slim' : prev.height }
+    })
+  }
+
+  const toggleHeight = (): void => {
+    setPrefs((prev) => ({
+      ...prev,
+      height: prev.height === 'standard' ? 'slim' : 'standard'
+    }))
+  }
+
+  /**
+   * Click-through hotspot: while locked the window ignores the mouse, but
+   * events are forwarded — hovering the button strip lifts click-through so
+   * the controls stay usable; leaving the strip restores the pure overlay.
+   */
+  const setHotspotInteractive = (interactive: boolean): void => {
+    if (!isLocked || hotspotActiveRef.current === interactive) return
+    hotspotActiveRef.current = interactive
+    window.whisperApi?.setSubtitleClickThrough?.(!interactive)
+  }
+
   const visible = useMemo(() => {
     const finals = transcripts.filter((t) => t.text.trim())
     const history = buildDialogueHistory(finals, translations)
@@ -178,11 +295,30 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
     pointerEvents: 'auto' as const
   }
 
+  const bgHex = bgPresetColor(prefs.bgColor)
+  const textOverride = textPresetColor(prefs.textColor)
+  // Uniform text override: cascade through the theme CSS variables
+  const themeVars = (
+    textOverride
+      ? {
+          '--text': textOverride,
+          '--target': textOverride,
+          '--source': textOverride,
+          '--text-muted': textOverride
+        }
+      : {}
+  ) as React.CSSProperties
+
   const toggleLock = (): void => {
     setIsLocked((v) => !v)
   }
 
   const chromeForceVisible = settingsOpen || isLocked
+
+  const nextPosition =
+    SUBTITLE_POSITION_ORDER[
+      (SUBTITLE_POSITION_ORDER.indexOf(prefs.position) + 1) % SUBTITLE_POSITION_ORDER.length
+    ]!
 
   return (
     <div
@@ -191,7 +327,8 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        backgroundColor: `rgba(0, 0, 0, ${prefs.backgroundOpacity / 100})`
+        backgroundColor: hexToRgba(bgHex, prefs.backgroundOpacity / 100),
+        ...themeVars
       }}
     >
       {/* Full-bleed content — no top padding; overlays may cover text */}
@@ -288,7 +425,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
         />
       </div>
 
-      {/* 右上角按钮组 (沉浸式悬浮层) */}
+      {/* 右上角按钮组 (沉浸式悬浮层)。锁定时整窗鼠标穿越，但悬停本组可临时恢复交互 */}
       <div
         className={`no-drag absolute right-2 top-2 z-[9999] flex items-center gap-2 transition-opacity duration-300 ${
           chromeForceVisible
@@ -296,6 +433,8 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
             : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100'
         }`}
         style={{ WebkitAppRegion: 'no-drag' }}
+        onMouseEnter={() => setHotspotInteractive(true)}
+        onMouseLeave={() => setHotspotInteractive(false)}
       >
         <span
           className={`inline-flex h-1.5 w-1.5 shrink-0 rounded-full ${
@@ -305,9 +444,44 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
 
         <button
           type="button"
+          aria-label="切换字幕位置"
+          title={`字幕位置：${POSITION_LABELS[prefs.position]}（点击切换 → ${POSITION_LABELS[nextPosition]}）`}
+          className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
+            prefs.position === 'bottom-center'
+              ? 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
+              : 'border-[var(--accent)] text-[var(--accent)]'
+          }`}
+          style={{ WebkitAppRegion: 'no-drag' }}
+          onClick={cyclePosition}
+        >
+          <PositionIcon position={prefs.position} />
+        </button>
+
+        <button
+          type="button"
+          aria-label={prefs.height === 'slim' ? '切换为标准高度' : '切换为精简高度'}
+          aria-pressed={prefs.height === 'slim'}
+          title={
+            prefs.height === 'slim'
+              ? '精简高度（每栏约 3 行）· 点击切换为标准'
+              : '标准高度（每栏约 5 行）· 点击切换为精简'
+          }
+          className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
+            prefs.height === 'slim'
+              ? 'border-[var(--accent)] text-[var(--accent)]'
+              : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
+          }`}
+          style={{ WebkitAppRegion: 'no-drag' }}
+          onClick={toggleHeight}
+        >
+          <HeightIcon slim={prefs.height === 'slim'} />
+        </button>
+
+        <button
+          type="button"
           aria-label={isLocked ? '解锁窗口' : '锁定窗口'}
           aria-pressed={isLocked}
-          title={isLocked ? '解锁（可拖动/调整大小）' : '锁定（禁止拖动与调整大小）'}
+          title={isLocked ? '解锁（可拖动/调整大小）' : '锁定（窗口固定且鼠标穿透，仅按钮可交互）'}
           className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
             isLocked
               ? 'border-[var(--accent)] text-[var(--accent)]'
@@ -338,7 +512,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
 
           {settingsOpen && (
             <div
-              className="settings-panel absolute right-0 z-40 w-56 rounded border border-[var(--border)] bg-[var(--bg-panel)]/95 p-3 shadow-xl backdrop-blur-sm"
+              className="settings-panel absolute right-0 z-40 w-60 rounded border border-[var(--border)] bg-[var(--bg-panel)]/95 p-3 shadow-xl backdrop-blur-sm"
               style={{
                 WebkitAppRegion: 'no-drag',
                 top: 'calc(100% + 4px)'
@@ -378,7 +552,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
                 />
               </label>
 
-              <label className="flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
+              <label className="mb-3 flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
                 背景不透明度 {prefs.backgroundOpacity}%
                 <input
                   type="range"
@@ -391,6 +565,74 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
                   className="w-full accent-[var(--accent)]"
                 />
               </label>
+
+              <div className="mb-3 flex flex-col gap-1.5">
+                <span className="text-[10px] text-[var(--text-muted)]">
+                  背景色（深色配亮字；淡黄/纯白建议配黑字）
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {BG_PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      title={p.label}
+                      aria-label={`背景色 ${p.label}`}
+                      aria-pressed={prefs.bgColor === p.id}
+                      onClick={() => patchPrefs({ bgColor: p.id })}
+                      className={`h-5 w-5 rounded border transition ${
+                        prefs.bgColor === p.id
+                          ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/60'
+                          : 'border-white/30 hover:border-white/70'
+                      }`}
+                      style={{ backgroundColor: p.color }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] text-[var(--text-muted)]">文字颜色</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {TEXT_PRESETS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      title={p.label}
+                      aria-label={`文字色 ${p.label}`}
+                      aria-pressed={prefs.textColor === p.id}
+                      onClick={() => patchPrefs({ textColor: p.id })}
+                      className={`h-5 w-5 rounded border transition ${
+                        prefs.textColor === p.id
+                          ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/60'
+                          : 'border-white/30 hover:border-white/70'
+                      }`}
+                      style={{
+                        backgroundColor: '#111827',
+                        ...(p.color ? { color: p.color } : {})
+                      }}
+                    >
+                      {p.color ? (
+                        <span className="text-[13px] font-bold leading-none" style={{ color: p.color }}>
+                          文
+                        </span>
+                      ) : (
+                        <span
+                          className="text-[13px] font-bold leading-none"
+                          style={{
+                            background:
+                              'linear-gradient(90deg, #e8eef6 50%, #86efac 50%)',
+                            WebkitBackgroundClip: 'text',
+                            backgroundClip: 'text',
+                            color: 'transparent'
+                          }}
+                        >
+                          文
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -438,6 +680,69 @@ function LockIcon({ locked }: { locked: boolean }): React.JSX.Element {
     >
       <rect x="5" y="11" width="14" height="10" rx="2" />
       <path d="M8 11V7a4 4 0 0 1 7.5-2" />
+    </svg>
+  )
+}
+
+/** Monitor with an indicator at the active screen edge. */
+function PositionIcon({
+  position
+}: {
+  position: SubtitlePositionPreset
+}): React.JSX.Element {
+  const indicator: Record<SubtitlePositionPreset, { x: number; y: number }> = {
+    'bottom-center': { x: 10.5, y: 15 },
+    'top-center': { x: 10.5, y: 6 },
+    'left-column': { x: 6, y: 10.5 },
+    'right-column': { x: 18, y: 10.5 }
+  }
+  const { x, y } = indicator[position]
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="3" y="4" width="18" height="12" rx="1.5" />
+      <path d="M8 20h8" />
+      <circle cx={x} cy={y} r="2" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/** Full-height / slim-height toggle (contract / expand chevrons). */
+function HeightIcon({ slim }: { slim: boolean }): React.JSX.Element {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {/* slim: chevrons fold toward the middle bar; standard: chevrons expand outward */}
+      {slim ? (
+        <>
+          <path d="M6 12h12" />
+          <path d="m8 8 4-4 4 4" />
+          <path d="m8 16 4 4 4-4" />
+        </>
+      ) : (
+        <>
+          <path d="m8 4 4 4 4-4" />
+          <path d="m8 20 4-4 4 4" />
+        </>
+      )}
     </svg>
   )
 }

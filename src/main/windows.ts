@@ -1,16 +1,30 @@
 import { app, BrowserWindow, clipboard, ipcMain, screen, session } from 'electron'
 import { join } from 'path'
+import {
+  isSubtitleHeightPreset,
+  isSubtitlePositionPreset,
+  type SubtitleHeightPreset,
+  type SubtitlePositionPreset
+} from '../shared/types'
 
 const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 let subtitleWindow: BrowserWindow | null = null
+/** Click-through lock state of the satellite subtitle window */
+let subtitleLocked = false
 
 const FULL_MIN = { width: 900, height: 560 }
 const FULL_DEFAULT = { width: 1280, height: 800 }
 /** Width unchanged; height fits ~5 records × 2 panes (~30px/record + chrome). */
 const SUBTITLE_SIZE = { width: 1000, height: 350 }
-const SUBTITLE_MIN = { width: 640, height: 240 }
+const SUBTITLE_MIN = { width: 360, height: 180 }
+/** Horizontal preset: slim ≈ 3 lines/pane, standard ≈ 5 lines/pane */
+const SUBTITLE_HEIGHTS: Record<SubtitleHeightPreset, number> = { standard: 350, slim: 240 }
+/** Vertical column preset geometry */
+const SUBTITLE_COLUMN_WIDTH = 520
+const SUBTITLE_COLUMN_HEIGHT_RATIO = 0.66
+const SUBTITLE_EDGE_INSET = 24
 
 function getPreloadPath(): string {
   return join(__dirname, '../preload/index.mjs')
@@ -58,6 +72,41 @@ function notifyMainSubtitleOpen(isOpen: boolean): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('subtitle-window-state', isOpen)
   }
+}
+
+/** Compute window bounds for a subtitle placement preset. */
+function subtitleBoundsFor(
+  position: SubtitlePositionPreset,
+  height: SubtitleHeightPreset
+): Electron.Rectangle {
+  const { width, height: workHeight, x, y } = screen.getPrimaryDisplay().workArea
+
+  if (position === 'left-column' || position === 'right-column') {
+    const w = Math.min(SUBTITLE_COLUMN_WIDTH, Math.floor(width * 0.5))
+    const h = Math.round(workHeight * SUBTITLE_COLUMN_HEIGHT_RATIO)
+    const px =
+      position === 'left-column'
+        ? x + SUBTITLE_EDGE_INSET
+        : x + width - w - SUBTITLE_EDGE_INSET
+    return { x: px, y: y + Math.round((workHeight - h) / 2), width: w, height: h }
+  }
+
+  const w = Math.min(SUBTITLE_SIZE.width, Math.floor(width * 0.9))
+  const h = SUBTITLE_HEIGHTS[height]
+  const px = x + Math.round((width - w) / 2)
+  const py =
+    position === 'top-center'
+      ? y + SUBTITLE_EDGE_INSET
+      : y + workHeight - h - 50
+  return { x: px, y: py, width: w, height: h }
+}
+
+function applySubtitleGeometry(
+  position: SubtitlePositionPreset,
+  height: SubtitleHeightPreset
+): void {
+  if (!subtitleWindow || subtitleWindow.isDestroyed()) return
+  subtitleWindow.setBounds(subtitleBoundsFor(position, height))
 }
 
 export function createSubtitleWindow(): BrowserWindow {
@@ -266,12 +315,32 @@ export function registerWindowIpc(): void {
     win?.close()
   })
 
+  ipcMain.on('subtitle:set-geometry', (_event, position: unknown, height: unknown) => {
+    if (!isSubtitlePositionPreset(position) || !isSubtitleHeightPreset(height)) return
+    applySubtitleGeometry(position, height)
+  })
+
+  /**
+   * Locked subtitle = pure overlay: the whole window passes mouse through
+   * (events still forwarded so hover/hotspots work). Unlock restores input.
+   */
+  ipcMain.on('subtitle:set-click-through', (event, ignore: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed() || win !== subtitleWindow) return
+    if (!subtitleLocked) return
+    win.setIgnoreMouseEvents(Boolean(ignore), { forward: true })
+  })
+
   ipcMain.on('set-window-locked', (event, isLocked: unknown) => {
     const locked = Boolean(isLocked)
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return
     // Unlock → edge resize allowed; lock → size + (CSS) position locked
     win.setResizable(!locked)
+    if (win === subtitleWindow) {
+      subtitleLocked = locked
+      win.setIgnoreMouseEvents(locked, { forward: true })
+    }
   })
 
   ipcMain.handle('clipboard:write-text', (_event, text: unknown) => {

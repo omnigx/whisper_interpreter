@@ -74,10 +74,22 @@ const api = {
 
   /**
    * Lock / unlock subtitle window chrome.
-   * Main process only toggles setResizable; move uses native -webkit-app-region.
+   * Locked = fixed size + full mouse click-through (main process toggles
+   * setResizable and setIgnoreMouseEvents); the top-right hotspot in the
+   * subtitle window temporarily lifts click-through so buttons stay usable.
    */
   setSubtitleLocked: (isLocked: boolean): void => {
     ipcRenderer.send('set-window-locked', Boolean(isLocked))
+  },
+
+  /** Apply a placement/height preset to the satellite subtitle window. */
+  setSubtitleGeometry: (position: string, height: string): void => {
+    ipcRenderer.send('subtitle:set-geometry', position, height)
+  },
+
+  /** Subtitle-window hotspot: temporarily lift / restore click-through while locked. */
+  setSubtitleClickThrough: (ignore: boolean): void => {
+    ipcRenderer.send('subtitle:set-click-through', Boolean(ignore))
   },
 
   /** Fire-and-forget JSONL session log (main process queue) */

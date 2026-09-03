@@ -44,6 +44,31 @@ export interface DisplaySettings {
 /** Floating subtitle overlay display strategy */
 export type SubtitleDisplayMode = 'count' | 'time'
 
+/** Satellite subtitle window placement presets */
+export type SubtitlePositionPreset =
+  | 'bottom-center' /** 默认：屏幕中下方横排 */
+  | 'top-center' /** 极简：屏幕上部居中（配合 slim 高度） */
+  | 'left-column' /** 竖条：屏幕左侧，垂直居中 */
+  | 'right-column' /** 竖条：屏幕右侧，垂直居中 */
+
+/** Satellite subtitle window height presets (≈5 / ≈3 lines per pane) */
+export type SubtitleHeightPreset = 'standard' | 'slim'
+
+export const SUBTITLE_POSITION_ORDER: SubtitlePositionPreset[] = [
+  'bottom-center',
+  'top-center',
+  'left-column',
+  'right-column'
+]
+
+export function isSubtitlePositionPreset(v: unknown): v is SubtitlePositionPreset {
+  return typeof v === 'string' && SUBTITLE_POSITION_ORDER.includes(v as SubtitlePositionPreset)
+}
+
+export function isSubtitleHeightPreset(v: unknown): v is SubtitleHeightPreset {
+  return v === 'standard' || v === 'slim'
+}
+
 export interface SubtitleDisplaySettings {
   displayMode: SubtitleDisplayMode
   /** Keep latest N pairs (2–5) when displayMode === 'count' */
