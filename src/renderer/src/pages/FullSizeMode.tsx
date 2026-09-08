@@ -75,6 +75,7 @@ export function FullSizeMode({
     setGainLive,
     setMaxSentenceLive,
     setSilenceLive,
+    setInputSourceLive,
     setDeviceLive,
     setSyncRecordingLive
   } = useAudioPipeline()
@@ -270,6 +271,7 @@ export function FullSizeMode({
         onGain={setGainLive}
         onMaxSentence={setMaxSentenceLive}
         onSilence={setSilenceLive}
+        onInputSource={(mode) => void setInputSourceLive(mode)}
         onDevice={(id) => void setDeviceLive(id)}
         onRefreshDevices={() => void refreshDevices()}
         onSyncRecordingChange={(enabled) => void setSyncRecordingLive(enabled)}

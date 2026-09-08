@@ -1,3 +1,4 @@
+import type { AudioInputSource } from '@shared/types'
 import type { PcmPacket, SileroVadHandle, VadSegment } from './pipeline'
 
 const TARGET_RATE = 16000 as const
@@ -16,6 +17,8 @@ export interface AudioCaptureOptions {
   volume?: number
   gain?: number
   deviceId?: string
+  /** mic (default) | loopback (system/meeting audio) | mix (both summed) */
+  sourceMode?: AudioInputSource
   onPcm?: (packet: PcmPacket) => void
   onLevel?: (level: AudioLevelSnapshot) => void
   onError?: (err: Error) => void
@@ -27,18 +30,73 @@ export interface AudioCaptureHandle {
   setVolume: (v: number) => void
   setGain: (g: number) => void
   setDeviceId: (deviceId: string | undefined) => Promise<void>
+  /** Live-switch capture source (mic / loopback / mix) — rebuilds the graph */
+  setSourceMode: (mode: AudioInputSource) => Promise<void>
   getAnalyser: () => AnalyserNode | null
   isRunning: () => boolean
 }
 
 /**
- * Mic → GainNode → VolumeNode → Analyser → AudioWorklet(16k PCM)
+ * Open the requested input streams.
+ * - loopback uses Electron display-capture with audio:'loopback' (main process
+ *   setDisplayMediaRequestHandler auto-answers; speakers keep playing — it is
+ *   a passive tap of the system output mix, meeting clients are unaware).
+ */
+async function openInputStreams(
+  mode: AudioInputSource,
+  deviceId: string | undefined
+): Promise<MediaStream[]> {
+  const streams: MediaStream[] = []
+
+  if (mode === 'mic' || mode === 'mix') {
+    const constraints: MediaTrackConstraints = {
+      channelCount: 1,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false
+    }
+    if (deviceId) {
+      constraints.deviceId = { exact: deviceId }
+    }
+    streams.push(await navigator.mediaDevices.getUserMedia({ audio: constraints }))
+  }
+
+  if (mode === 'loopback' || mode === 'mix') {
+    try {
+      // Chromium requires a video track in getDisplayMedia; the main-process
+      // handler supplies the screen source and 'loopback' audio. We drop the
+      // video track immediately and keep only the system-audio track.
+      const display = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true
+      })
+      display.getVideoTracks().forEach((t) => t.stop())
+      const audioTracks = display.getAudioTracks()
+      if (audioTracks.length === 0) {
+        display.getTracks().forEach((t) => t.stop())
+        throw new Error('环回流中无音频轨（请确认在 Windows 上运行）')
+      }
+      streams.push(new MediaStream(audioTracks))
+    } catch (e) {
+      // Roll back anything we already opened
+      streams.forEach((s) => s.getTracks().forEach((t) => t.stop()))
+      const msg = e instanceof Error ? e.message : String(e)
+      throw new Error(`系统声音环回采集失败：${msg}`)
+    }
+  }
+
+  return streams
+}
+
+/**
+ * [mic|loopback|mix] → GainNode → VolumeNode → Analyser → AudioWorklet(16k PCM)
+ * Multiple sources (mix mode) connect into the same GainNode — WebAudio sums them.
  * Volume / Gain both sit on the capture path so STT/VAD hear the adjusted signal.
  */
 export function createAudioCapture(): AudioCaptureHandle {
   let ctx: AudioContext | null = null
-  let stream: MediaStream | null = null
-  let source: MediaStreamAudioSourceNode | null = null
+  let streams: MediaStream[] = []
+  let sourceNodes: MediaStreamAudioSourceNode[] = []
   let gainNode: GainNode | null = null
   let volumeNode: GainNode | null = null
   let analyser: AnalyserNode | null = null
@@ -48,6 +106,7 @@ export function createAudioCapture(): AudioCaptureHandle {
   let lastRms = 0
   let levelTimer: number | null = null
   let currentDeviceId: string | undefined
+  let currentSourceMode: AudioInputSource = 'mic'
   let currentOpts: AudioCaptureOptions = {}
 
   const teardownGraph = (): void => {
@@ -64,14 +123,14 @@ export function createAudioCapture(): AudioCaptureHandle {
     analyser?.disconnect()
     volumeNode?.disconnect()
     gainNode?.disconnect()
-    source?.disconnect()
+    sourceNodes.forEach((n) => n.disconnect())
     worklet = null
     analyser = null
     volumeNode = null
     gainNode = null
-    source = null
-    stream?.getTracks().forEach((t) => t.stop())
-    stream = null
+    sourceNodes = []
+    streams.forEach((s) => s.getTracks().forEach((t) => t.stop()))
+    streams = []
     if (ctx) {
       void ctx.close()
       ctx = null
@@ -81,17 +140,12 @@ export function createAudioCapture(): AudioCaptureHandle {
 
   const buildGraph = async (opts: AudioCaptureOptions): Promise<void> => {
     currentOpts = opts
-    const constraints: MediaTrackConstraints = {
-      channelCount: 1,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false
-    }
-    if (opts.deviceId || currentDeviceId) {
-      constraints.deviceId = { exact: opts.deviceId ?? currentDeviceId }
-    }
+    const sourceMode = opts.sourceMode ?? 'mic'
+    currentSourceMode = sourceMode
+    currentDeviceId = opts.deviceId ?? currentDeviceId
 
-    stream = await navigator.mediaDevices.getUserMedia({ audio: constraints })
+    const opened = await openInputStreams(sourceMode, currentDeviceId)
+    streams = opened
     ctx = new AudioContext({ sampleRate: TARGET_RATE })
     if (ctx.state === 'suspended') {
       await ctx.resume()
@@ -101,7 +155,6 @@ export function createAudioCapture(): AudioCaptureHandle {
     const workletUrl = new URL('/pcm-capture-processor.js', window.location.origin).href
     await ctx.audioWorklet.addModule(workletUrl)
 
-    source = ctx.createMediaStreamSource(stream)
     gainNode = ctx.createGain()
     volumeNode = ctx.createGain()
     analyser = ctx.createAnalyser()
@@ -137,12 +190,13 @@ export function createAudioCapture(): AudioCaptureHandle {
       currentOpts.onPcm?.(packet)
     }
 
-    // source → gain → volume → analyser → worklet
-    // worklet output is silent; do not connect to destination (avoid feedback)
-    source.connect(gainNode)
+    // sources → gain → volume → analyser → worklet (sources sum in mix mode)
+    sourceNodes = streams.map((s) => ctx!.createMediaStreamSource(s))
+    sourceNodes.forEach((n) => n.connect(gainNode!))
     gainNode.connect(volumeNode)
     volumeNode.connect(analyser)
     analyser.connect(worklet)
+    // worklet output is silent; do not connect to destination (avoid feedback)
 
     framesEmitted = 0
     lastRms = 0
@@ -207,6 +261,17 @@ export function createAudioCapture(): AudioCaptureHandle {
         const opts = { ...currentOpts, deviceId }
         this.stop()
         await this.start(opts)
+      }
+    },
+
+    async setSourceMode(mode) {
+      if (mode === currentSourceMode && running) return
+      if (running) {
+        const opts = { ...currentOpts, sourceMode: mode }
+        this.stop()
+        await this.start(opts)
+      } else {
+        currentSourceMode = mode
       }
     },
 

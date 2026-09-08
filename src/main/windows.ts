@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, screen, session } from 'electron'
+import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, screen, session } from 'electron'
 import { join } from 'path'
 import {
   isSubtitleHeightPreset,
@@ -58,6 +58,24 @@ function grantMediaPermissions(): void {
 
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
     return permission === 'media' || permission === 'mediaKeySystem'
+  })
+
+  // System-audio loopback for meeting transcription: the renderer asks for
+  // getDisplayMedia({video, audio}); we auto-answer with the primary screen
+  // plus 'loopback' (= passive tap of the system output mix — speakers keep
+  // playing, no driver, meeting clients are unaware). The renderer stops the
+  // video track immediately and keeps only audio.
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    desktopCapturer
+      .getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+      .then((sources) => {
+        if (sources.length === 0) {
+          callback({})
+          return
+        }
+        callback({ video: sources[0], audio: 'loopback' })
+      })
+      .catch(() => callback({}))
   })
 }
 

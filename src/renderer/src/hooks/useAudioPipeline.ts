@@ -9,7 +9,7 @@ import type { VadEngine } from '../services/pipeline'
 import { createSttClient, type SttClient } from '../services/stt'
 import { createLlmClient, type LlmClient } from '../services/llm'
 import type { SileroVadHandle } from '../services/pipeline'
-import { getActiveLlm, isCloudStt, isFasterWhisperStt, isUtteranceLocalStt, fasterWhisperModelSize, clampVadSilenceMs, localSttLauncherKey } from '@shared/types'
+import { getActiveLlm, isCloudStt, isFasterWhisperStt, isUtteranceLocalStt, fasterWhisperModelSize, clampVadSilenceMs, localSttLauncherKey, type AudioInputSource } from '@shared/types'
 import { useAppStore } from '../stores/appStore'
 import { useNetworkMonitor } from './useNetworkMonitor'
 import {
@@ -44,6 +44,7 @@ export function useAudioPipeline(): {
   setGainLive: (g: number) => void
   setMaxSentenceLive: (ms: number) => void
   setSilenceLive: (ms: number) => void
+  setInputSourceLive: (mode: AudioInputSource) => Promise<void>
   setDeviceLive: (deviceId: string) => Promise<void>
   setSyncRecordingLive: (enabled: boolean) => Promise<void>
 } {
@@ -635,6 +636,7 @@ export function useAudioPipeline(): {
         volume: audio.volume,
         gain: audio.gain,
         deviceId: audio.deviceId || undefined,
+        sourceMode: audio.inputSource ?? 'mic',
         onPcm: (packet) => {
           vadRef.current?.pushPcm(packet)
           sttRef.current?.sendPcm(packet)
@@ -667,10 +669,15 @@ export function useAudioPipeline(): {
       startingRef.current = false
       const engineLabel = vad.engine === 'silero' ? 'Silero' : 'Energy'
       const llmLabel = llmCfg?.label ?? 'LLM?'
-      const inputDevice = audio.deviceId
-        ? devicesRef.current.find((d) => d.deviceId === audio.deviceId)?.label ||
-          `device:${audio.deviceId.slice(0, 8)}`
-        : 'system-default'
+      const inputDevice =
+        audio.inputSource === 'loopback'
+          ? 'system-loopback'
+          : audio.inputSource === 'mix'
+            ? 'system-loopback+mic'
+            : audio.deviceId
+              ? devicesRef.current.find((d) => d.deviceId === audio.deviceId)?.label ||
+                `device:${audio.deviceId.slice(0, 8)}`
+              : 'system-default'
       logSessionEvent({
         module: 'SYS',
         model_name: `${sttConfig.provider} + ${llmCfg?.model ?? 'none'}`,
@@ -852,6 +859,36 @@ export function useAudioPipeline(): {
     [setAudio]
   )
 
+  const setInputSourceLive = useCallback(
+    async (mode: AudioInputSource) => {
+      const prev = useAppStore.getState().settings.audio.inputSource
+      if (mode === prev) return
+      setAudio({ inputSource: mode })
+      if (useAppStore.getState().isListening) {
+        try {
+          await captureRef.current?.setSourceMode(mode)
+          setPipelineStatus(
+            mode === 'mic'
+              ? '输入源已切换 · 麦克风'
+              : mode === 'loopback'
+                ? '输入源已切换 · 系统声音（会议音频环回）'
+                : '输入源已切换 · 系统声音 + 麦克风（混合）'
+          )
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          setAudio({ inputSource: prev })
+          setPipelineStatus(`输入源切换失败：${msg}`)
+        }
+      }
+      logSessionEvent({
+        module: 'SYS',
+        model_name: 'settings',
+        content: `input_source ${prev} → ${mode}`
+      })
+    },
+    [setAudio, setPipelineStatus]
+  )
+
   const setDeviceLive = useCallback(
     async (deviceId: string) => {
       setAudio({ deviceId })
@@ -906,6 +943,7 @@ export function useAudioPipeline(): {
     setGainLive,
     setMaxSentenceLive,
     setSilenceLive,
+    setInputSourceLive,
     setDeviceLive,
     setSyncRecordingLive
   }

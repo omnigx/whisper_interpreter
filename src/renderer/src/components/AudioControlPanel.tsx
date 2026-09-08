@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 import {
+  AUDIO_INPUT_SOURCE_OPTIONS,
   VAD_SILENCE_MIN_MS,
   VAD_SILENCE_MAX_MS,
-  VAD_SILENCE_STEP_MS
+  VAD_SILENCE_STEP_MS,
+  type AudioInputSource
 } from '@shared/types'
 import { useAppStore } from '../stores/appStore'
 import { subscribeMeter, type MeterSnapshot } from '../services/meterBus'
@@ -15,6 +17,7 @@ interface AudioControlPanelProps {
   onGain: (g: number) => void
   onMaxSentence: (ms: number) => void
   onSilence: (ms: number) => void
+  onInputSource: (mode: AudioInputSource) => void
   onDevice: (deviceId: string) => void
   onRefreshDevices: () => void
   /** Toggle sync recording (may start/stop mid-session) */
@@ -64,6 +67,7 @@ export function AudioControlPanel({
   onGain,
   onMaxSentence,
   onSilence,
+  onInputSource,
   onDevice,
   onRefreshDevices,
   onSyncRecordingChange
@@ -83,7 +87,7 @@ export function AudioControlPanel({
       {/* 1. 输入电平 */}
       <LevelMeter active={isListening} />
 
-      {/* 2. 麦克风 */}
+      {/* 2. 麦克风 + 输入源 */}
       <div className="flex w-36 shrink-0 flex-col gap-0.5">
         <span className={LABEL}>麦克风</span>
         <div className="flex items-center gap-1">
@@ -110,7 +114,36 @@ export function AudioControlPanel({
         </div>
       </div>
 
-      {/* 2b. 同步录音（格式在顶栏「录音设置」中配置） */}
+      {/* 2b. 输入源（线上会议：系统声音环回，免驱动） */}
+      <div className="flex shrink-0 flex-col gap-0.5">
+        <span className={LABEL} title="线上会议选「系统声音」或「系统+麦克风」：环回采集系统播放音频，免驱动、会议软件无感">
+          输入源
+        </span>
+        <div
+          className="inline-flex items-center rounded border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5"
+          role="group"
+          aria-label="输入源"
+        >
+          {AUDIO_INPUT_SOURCE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              title={opt.hint}
+              aria-pressed={audio.inputSource === opt.value}
+              onClick={() => onInputSource(opt.value)}
+              className={`inline-flex h-[22px] items-center whitespace-nowrap rounded px-2 text-[11px] font-medium transition ${
+                audio.inputSource === opt.value
+                  ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 2c. 同步录音（格式在顶栏「录音设置」中配置） */}
       <div className="flex shrink-0 flex-col gap-0.5">
         <span className={LABEL}>同步录音</span>
         <label className="inline-flex h-[26px] cursor-pointer items-center gap-1.5 text-[11px] text-[var(--text)]">

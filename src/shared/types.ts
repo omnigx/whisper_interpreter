@@ -121,6 +121,29 @@ export function recordingFormatIdToLabel(
   return '.wav'
 }
 
+/**
+ * Capture source for the STT pipeline.
+ * - mic: USB-DAC / line-in (default, unchanged)
+ * - loopback: system output mix via Electron display-capture loopback
+ *   (meeting audio — others' voices; no driver needed)
+ * - mix: loopback + mic summed (transcribe everyone, incl. yourself)
+ */
+export type AudioInputSource = 'mic' | 'loopback' | 'mix'
+
+export const AUDIO_INPUT_SOURCE_OPTIONS: Array<{
+  value: AudioInputSource
+  label: string
+  hint: string
+}> = [
+  { value: 'mic', label: '麦克风', hint: 'USB-DAC / 线路输入（原模式）' },
+  { value: 'loopback', label: '系统声音', hint: '环回采集会议播放音频（仅他人声音，免驱动）' },
+  { value: 'mix', label: '系统+麦克风', hint: '会议音频与本机麦克风混合（听写所有人）' }
+]
+
+export function isAudioInputSource(v: unknown): v is AudioInputSource {
+  return v === 'mic' || v === 'loopback' || v === 'mix'
+}
+
 export interface AudioSettings {
   volume: number
   gain: number
@@ -128,6 +151,8 @@ export interface AudioSettings {
   maxSentenceMs: number
   /** Silence hold that ends a sentence (VAD redemption / stream settle) */
   vadSilenceMs: number
+  /** STT capture source: mic | loopback (meeting audio) | mix */
+  inputSource: AudioInputSource
   /** empty = system default mic */
   deviceId: string
   /** Capture PCM while STT is listening (default on) */
@@ -359,6 +384,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     sampleRate: 16000,
     maxSentenceMs: 15000,
     vadSilenceMs: 800,
+    inputSource: 'mic',
     deviceId: '',
     syncRecording: true,
     recordingFormat: 'wav',
