@@ -355,7 +355,12 @@ async function finalizeRecording(
   }
 }
 
-function startRecording(format?: unknown): { ok: boolean; error?: string } {
+function startRecording(format?: unknown): {
+  ok: boolean
+  error?: string
+  /** Deterministic final file name (startStamp-based) for log pairing */
+  recording_file?: string
+} {
   if (rec) {
     return { ok: false, error: 'recording already active' }
   }
@@ -378,7 +383,7 @@ function startRecording(format?: unknown): { ok: boolean; error?: string } {
       converting: false,
       startStamp
     }
-    return { ok: true }
+    return { ok: true, recording_file: `${startStamp}_recording.${formatExt(fmt)}` }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }

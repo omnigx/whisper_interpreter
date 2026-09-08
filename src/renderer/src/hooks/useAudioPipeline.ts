@@ -26,6 +26,7 @@ import { logSessionEvent } from '../services/sessionLogger'
 import { publishMeter } from '../services/meterBus'
 import {
   appendSyncRecordingPcm,
+  getLastRecordingFile,
   isSyncRecordingActive,
   startSyncRecording,
   stopSyncRecording
@@ -83,8 +84,13 @@ export function useAudioPipeline(): {
   const drainGenRef = useRef(0)
   /** Debug stats cadence (500ms) — meters themselves go through meterBus, not the store */
   const lastStatsPushRef = useRef(0)
+  /** STT instrumentation: when the utterance was flushed + its audio length */
+  const sttFlushAtRef = useRef(0)
+  const sttSegDurRef = useRef<number | undefined>(undefined)
 
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
+  /** Latest device list for session-start logging (avoids stale closures) */
+  const devicesRef = useRef<MediaDeviceInfo[]>([])
   const [vadEngine, setVadEngine] = useState<VadEngine | null>(null)
 
   useEffect(() => {
@@ -103,6 +109,7 @@ export function useAudioPipeline(): {
   const refreshDevices = useCallback(async () => {
     try {
       const list = await listAudioInputDevices()
+      devicesRef.current = list
       setDevices(list)
     } catch (e) {
       console.warn('enumerate devices failed', e)
@@ -171,10 +178,12 @@ export function useAudioPipeline(): {
       )
 
       let assembled = ''
+      let firstTokenAt: number | null = null
       try {
         assembled = await llm.translateStream(
           userContent,
           (chunk) => {
+            if (firstTokenAt === null) firstTokenAt = performance.now()
             assembled += chunk
             // Coalesce SSE deltas: one store write per ~80ms instead of per token
             throttledUi.emit(() => {
@@ -202,6 +211,19 @@ export function useAudioPipeline(): {
         if (isEchoRepetition(job.unit, assembled)) {
           removeTranslation(id)
           setPipelineStatus('已拦截复读原文的无效译文')
+          logSessionEvent({
+            module: 'LLM',
+            model_name: llmCfg.model || llm.label || llmCfg.id,
+            content: assembled,
+            latency: Math.round(performance.now() - translateStartedAt),
+            ...(firstTokenAt !== null
+              ? { first_token_ms: Math.round(firstTokenAt - translateStartedAt) }
+              : {}),
+            direction: actualDirection,
+            source_text: job.unit,
+            failed: true,
+            echo_intercepted: true
+          })
           continue
         }
 
@@ -220,6 +242,10 @@ export function useAudioPipeline(): {
           model_name: llmCfg.model || llm.label || llmCfg.id,
           content: assembled,
           latency: Math.round(performance.now() - translateStartedAt),
+          ...(firstTokenAt !== null
+            ? { first_token_ms: Math.round(firstTokenAt - translateStartedAt) }
+            : {}),
+          direction: actualDirection,
           source_text: job.unit
         })
         historyRef.current = [...historyRef.current, job.unit].slice(-20)
@@ -250,6 +276,19 @@ export function useAudioPipeline(): {
           type: 'translation'
         })
         setPipelineStatus(`翻译失败：${msg}`)
+        // Research stats need failures too — count/duration per session
+        logSessionEvent({
+          module: 'LLM',
+          model_name: llmCfg.model || llm.label || llmCfg.id,
+          content: assembled || `[翻译失败] ${msg}`,
+          latency: Math.round(performance.now() - translateStartedAt),
+          ...(firstTokenAt !== null
+            ? { first_token_ms: Math.round(firstTokenAt - translateStartedAt) }
+            : {}),
+          direction: actualDirection,
+          source_text: job.unit,
+          failed: true
+        })
 
         const settings = useAppStore.getState().settings
         if (
@@ -302,6 +341,11 @@ export function useAudioPipeline(): {
       type: 'system'
     })
     setPipelineStatus(`已切换至 ${label} · 旧翻译请求已中断`)
+    logSessionEvent({
+      module: 'SYS',
+      model_name: 'settings',
+      content: `llm switch → ${label}`
+    })
 
     // Ensure drain continues for re-queued / pending jobs with the new client
     window.setTimeout(() => {
@@ -430,7 +474,9 @@ export function useAudioPipeline(): {
           logSessionEvent({
             module: 'VAD',
             model_name: 'silero',
-            content: `#${count} ${seg.reason} ${dur}ms`
+            content: `#${count} ${seg.reason} ${dur}ms`,
+            duration_ms: dur,
+            reason: seg.reason
           })
           const link = useAppStore.getState().sttLinkStatus
           // Don't overwrite disconnect / reconnect banners with VAD chatter
@@ -441,6 +487,9 @@ export function useAudioPipeline(): {
                 : `VAD #${count} · ${seg.reason} · ${dur}ms → is_final`
             )
           }
+          // Arm STT latency measurement (flush → final text)
+          sttFlushAtRef.current = performance.now()
+          sttSegDurRef.current = dur
           sttRef.current?.notifyUtteranceEnd?.()
         }
       })
@@ -466,11 +515,18 @@ export function useAudioPipeline(): {
         const sttModel =
           useAppStore.getState().settings.stt.model ||
           useAppStore.getState().settings.stt.provider
+        // flush → final text latency + the utterance's audio length
+        const sttLatency = sttFlushAtRef.current
+          ? Math.round(performance.now() - sttFlushAtRef.current)
+          : undefined
         logSessionEvent({
           module: 'STT',
           model_name: sttModel,
-          content: text
+          content: text,
+          ...(sttLatency != null ? { latency: sttLatency } : {}),
+          ...(sttSegDurRef.current != null ? { duration_ms: sttSegDurRef.current } : {})
         })
+        sttFlushAtRef.current = 0
         runTranslate(text, result.utteranceId)
       }
       client.onSystem = (message) => {
@@ -611,10 +667,19 @@ export function useAudioPipeline(): {
       startingRef.current = false
       const engineLabel = vad.engine === 'silero' ? 'Silero' : 'Energy'
       const llmLabel = llmCfg?.label ?? 'LLM?'
+      const inputDevice = audio.deviceId
+        ? devicesRef.current.find((d) => d.deviceId === audio.deviceId)?.label ||
+          `device:${audio.deviceId.slice(0, 8)}`
+        : 'system-default'
       logSessionEvent({
         module: 'SYS',
         model_name: `${sttConfig.provider} + ${llmCfg?.model ?? 'none'}`,
-        content: `session start · VAD=${vad.engine}${isSyncRecordingActive() ? ' · sync-recording' : ''}`
+        content: `session start · VAD=${vad.engine}${isSyncRecordingActive() ? ' · sync-recording' : ''}`,
+        vad_silence_ms: vadSilenceMs,
+        max_sentence_ms: Math.round(audio.maxSentenceMs),
+        input_device: inputDevice,
+        sample_rate_hz: 16000,
+        ...(getLastRecordingFile() ? { recording_file: getLastRecordingFile() } : {})
       })
       setPipelineStatus(
         `监听中 · ${engineLabel}-VAD(${vadSilenceMs}ms) → ${sttLabel} → ${llmLabel}${
@@ -679,6 +744,11 @@ export function useAudioPipeline(): {
       if (sttRef.current?.switchFasterWhisperModel) {
         sttRef.current.switchFasterWhisperModel(nextFw)
         setPipelineStatus(`STT 热切换 → ${nextFw}…`)
+        logSessionEvent({
+          module: 'SYS',
+          model_name: 'settings',
+          content: `stt hot-switch → faster-whisper ${nextFw}`
+        })
         upsertTranslation({
           id: `sys-stt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           sourceId: 'system',
@@ -693,6 +763,11 @@ export function useAudioPipeline(): {
 
     setPartialText('')
     setPipelineStatus('STT 引擎已切换 · 正在重连…')
+    logSessionEvent({
+      module: 'SYS',
+      model_name: 'settings',
+      content: `stt switch ${prev.provider} → ${sttProvider}`
+    })
     void restartListeningRef.current()
   }, [setPartialText, setPipelineStatus, sttProvider, sttUrl, upsertTranslation])
 
@@ -738,6 +813,8 @@ export function useAudioPipeline(): {
   const setMaxSentenceLive = useCallback(
     (ms: number) => {
       const clamped = Math.min(30000, Math.max(5000, ms))
+      const prev = useAppStore.getState().settings.audio.maxSentenceMs
+      if (clamped === prev) return
       setAudio({ maxSentenceMs: clamped })
       vadRef.current?.setMaxSentenceMs(clamped)
       const utterance = isUtteranceLocalStt(
@@ -746,6 +823,12 @@ export function useAudioPipeline(): {
       sttRef.current?.configure?.({
         maxUtteranceMs: utterance ? clamped : Math.min(10000, clamped)
       })
+      logSessionEvent({
+        module: 'SYS',
+        model_name: 'settings',
+        content: `max_sentence_ms ${prev} → ${clamped}`,
+        max_sentence_ms: clamped
+      })
     },
     [setAudio]
   )
@@ -753,10 +836,18 @@ export function useAudioPipeline(): {
   const setSilenceLive = useCallback(
     (ms: number) => {
       const clamped = clampVadSilenceMs(ms)
+      const prev = useAppStore.getState().settings.audio.vadSilenceMs
+      if (clamped === prev) return
       setAudio({ vadSilenceMs: clamped })
       // Silero redemption (utterance flush) + Paraformer stream settle
       vadRef.current?.setRedemptionMs?.(clamped)
       sttRef.current?.configure?.({ silenceHoldMs: clamped })
+      logSessionEvent({
+        module: 'SYS',
+        model_name: 'settings',
+        content: `vad_silence_ms ${prev} → ${clamped}`,
+        vad_silence_ms: clamped
+      })
     },
     [setAudio]
   )

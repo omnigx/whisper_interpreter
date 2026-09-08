@@ -26,3 +26,6 @@ __pycache__/
 .specstory/
 .cursorindexingignore
 .cursor/
+
+# ZCode session artifacts
+.zcode/

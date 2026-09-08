@@ -156,7 +156,7 @@ const api = {
 
   startSyncRecording: (
     format: RecordingFormatId
-  ): Promise<{ ok: boolean; error?: string }> =>
+  ): Promise<{ ok: boolean; error?: string; recording_file?: string }> =>
     ipcRenderer.invoke('sync-recording:start', format),
 
   /** Int16 LE PCM chunk — non-blocking send */

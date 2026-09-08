@@ -206,10 +206,12 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
       setPipelineStatus(`翻译中 · ${routeHint} · LID=${detected} → ${llm.label}`)
       const throttledUi = createThrottledEmitter(80)
       let assembled = ''
+      let firstTokenAt: number | null = null
       try {
         assembled = await llm.translateStream(
           userContent,
           (chunk) => {
+            if (firstTokenAt === null) firstTokenAt = performance.now()
             assembled += chunk
             throttledUi.emit(() => {
               if (isEchoRepetition(text, assembled)) return
@@ -230,6 +232,16 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
         if (isEchoRepetition(text, assembled)) {
           removeTranslation(id)
           setPipelineStatus('已拦截复读原文的无效译文')
+          logSessionEvent({
+            module: 'LLM',
+            model_name: cfg.model || llm.label || cfg.id,
+            content: assembled,
+            latency: Math.round(performance.now() - started),
+            direction: actualDirection,
+            source_text: text,
+            failed: true,
+            echo_intercepted: true
+          })
           return
         }
         upsertTranslation({
@@ -246,6 +258,10 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
           model_name: cfg.model || llm.label || cfg.id,
           content: assembled,
           latency: Math.round(performance.now() - started),
+          ...(firstTokenAt !== null
+            ? { first_token_ms: Math.round(firstTokenAt - started) }
+            : {}),
+          direction: actualDirection,
           source_text: text
         })
         historyRef.current = [...historyRef.current, text].slice(-20)
@@ -265,6 +281,15 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
           direction: actualDirection
         })
         setPipelineStatus(`翻译失败：${msg}`)
+        logSessionEvent({
+          module: 'LLM',
+          model_name: cfg.model || llm.label || cfg.id,
+          content: assembled || `[翻译失败] ${msg}`,
+          latency: Math.round(performance.now() - started),
+          direction: actualDirection,
+          source_text: text,
+          failed: true
+        })
       }
     })
   }

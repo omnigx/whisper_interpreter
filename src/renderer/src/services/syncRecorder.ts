@@ -8,6 +8,12 @@ import { useAppStore } from '../stores/appStore'
  * Updates recordingUiStatus for the footer indicator.
  */
 let active = false
+/** Final file name of the current/latest recording (for log pairing) */
+let lastRecordingFile: string | undefined
+
+export function getLastRecordingFile(): string | undefined {
+  return lastRecordingFile
+}
 
 /** Batched PCM accumulator */
 const BATCH_FLUSH_MS = 250
@@ -62,6 +68,7 @@ export async function startSyncRecording(
   const res = await api.startSyncRecording(format)
   if (res?.ok) {
     active = true
+    lastRecordingFile = res.recording_file
     useAppStore.getState().setRecordingUiStatus('recording')
   }
   return res ?? { ok: false, error: 'start failed' }
