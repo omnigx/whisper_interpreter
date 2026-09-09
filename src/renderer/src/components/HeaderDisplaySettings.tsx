@@ -150,7 +150,7 @@ export function HeaderDisplaySettings(): React.JSX.Element {
           className="settings-panel absolute right-0 z-50 w-64 rounded border border-[var(--border)] bg-[var(--bg-panel)] p-3 shadow-xl"
           style={{
             WebkitAppRegion: 'no-drag',
-            top: 'calc(100% + 6px)'
+            top: 'calc(100% + 14px)'
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >
