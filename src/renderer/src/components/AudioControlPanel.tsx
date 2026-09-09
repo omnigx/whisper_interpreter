@@ -139,10 +139,11 @@ export function AudioControlPanel({
         </label>
       </div>
 
-      {/* 3. Gain | Segment | Sentence pause — gain/segment fixed, pause fills
-          the tail. 音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减） */}
+      {/* 3. 分割线左＝原始音频（电平/麦克风/增益），右＝语义拆分（片段/停顿/VAD）。
+          三条滑块 flex-1 严格等宽，增益右端即分割线。
+          音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减） */}
       <div className="flex min-w-0 flex-1 items-end gap-8">
-        <div className="flex w-40 shrink-0 flex-col gap-0.5">
+        <div className="flex min-w-32 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>增益 Gain</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -165,7 +166,12 @@ export function AudioControlPanel({
           />
         </div>
 
-        <div className="flex w-40 shrink-0 flex-col gap-0.5">
+        <div
+          className="my-0.5 w-px self-stretch bg-[var(--border)]"
+          aria-hidden="true"
+        />
+
+        <div className="flex min-w-32 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>片段 Segment</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -183,9 +189,9 @@ export function AudioControlPanel({
           />
         </div>
 
-        <div className="flex min-w-40 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-32 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
-            <span>断句停顿</span>
+            <span>断句停顿 Silence</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
               {(audio.vadSilenceMs / 1000).toFixed(2)}s
             </span>
