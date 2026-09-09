@@ -47,7 +47,7 @@ export function HeaderInputSource({
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         onClick={() => setOpen((v) => !v)}
       >
-        <SpeakerIcon />
+        <MicLineIcon />
       </button>
 
       {open && (
@@ -56,8 +56,7 @@ export function HeaderInputSource({
           style={
             {
               WebkitAppRegion: 'no-drag',
-              top: 'calc(100% - 4px)',
-              paddingTop: 10
+              top: 'calc(100% + 6px)'
             } as React.CSSProperties
           }
           onMouseDown={(e) => e.stopPropagation()}
@@ -110,7 +109,7 @@ export function HeaderInputSource({
   )
 }
 
-function SpeakerIcon(): React.JSX.Element {
+function MicLineIcon(): React.JSX.Element {
   return (
     <svg
       width="15"
@@ -123,9 +122,9 @@ function SpeakerIcon(): React.JSX.Element {
       strokeLinejoin="round"
       aria-hidden
     >
-      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
-      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <path d="M12 17v4" />
     </svg>
   )
 }

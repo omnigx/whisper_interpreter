@@ -21,16 +21,20 @@ interface AudioControlPanelProps {
 }
 
 /**
- * Discrete nonlinear gain steps (ear-friendly).
- * Sub-2× now steps by 0.1 — attenuation duty formerly covered by the removed
- * volume slider (gain × volume multiply in series, so gain <1 = attenuation).
+ * Discrete gain steps, symmetric around 1.0× so the default sits exactly at
+ * the middle of the slider track (index 20 of 41 = 50%). Left half is fine
+ * attenuation (0.05 steps — duty formerly covered by the removed volume
+ * slider, since gain × volume multiply in series); right half amplification.
  */
 export const GAIN_STEPS: number[] = (() => {
   const steps: number[] = []
-  for (let g = 0; g <= 2; g += 0.1) {
+  for (let g = 0; g <= 1.0001; g += 0.05) {
     steps.push(Number(g.toFixed(2)))
   }
-  for (let g = 2.5; g <= 8; g += 0.5) {
+  for (let g = 1.2; g <= 3.0001; g += 0.2) {
+    steps.push(Number(g.toFixed(1)))
+  }
+  for (let g = 3.5; g <= 8.0001; g += 0.5) {
     steps.push(Number(g.toFixed(1)))
   }
   return steps
@@ -135,10 +139,10 @@ export function AudioControlPanel({
         </label>
       </div>
 
-      {/* 3. Gain | Segment | Sentence pause — last cell fills the row.
+      {/* 3. Gain | Segment | Sentence pause — equal thirds fill the row.
           音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减） */}
       <div className="flex min-w-0 flex-1 items-end gap-8">
-        <div className="flex w-40 shrink-0 flex-col gap-0.5">
+        <div className="flex min-w-36 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>增益 Gain</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -157,11 +161,11 @@ export function AudioControlPanel({
               if (typeof next === 'number') onGain(next)
             }}
             className="w-full accent-[var(--accent)]"
-            title="0–2× 细调 0.1（含衰减）；2× 以上粗调 0.5。音量请用 Bosch 主机硬件旋钮"
+            title="1× 居中：左半段 0.05 细调衰减，右半段放大至 8×。音量请用 Bosch 主机硬件旋钮"
           />
         </div>
 
-        <div className="flex w-40 shrink-0 flex-col gap-0.5">
+        <div className="flex min-w-36 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>片段 Segment</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -179,7 +183,7 @@ export function AudioControlPanel({
           />
         </div>
 
-        <div className="flex min-w-40 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-36 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>断句停顿</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">

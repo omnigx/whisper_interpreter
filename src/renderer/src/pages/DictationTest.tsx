@@ -450,7 +450,11 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
             清空
           </button>
 
-          {/* 占位：录音 / 引擎 / 字体设置图标按钮 h-8 w-8 */}
+          {/* 占位：录音 / 输入源 / 引擎 / 字体设置图标按钮 h-8 w-8 */}
+          <span
+            className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
+            aria-hidden
+          />
           <span
             className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
             aria-hidden

@@ -156,8 +156,7 @@ export function HeaderEngineSettings(): React.JSX.Element {
           className="settings-panel absolute right-0 z-50 w-64 rounded border border-[var(--border)] bg-[var(--bg-panel)] p-3 shadow-xl"
           style={{
             WebkitAppRegion: 'no-drag',
-            top: 'calc(100% - 4px)',
-            paddingTop: 10
+            top: 'calc(100% + 6px)'
           }}
           onMouseDown={(e) => e.stopPropagation()}
         >

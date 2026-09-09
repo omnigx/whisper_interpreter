@@ -82,8 +82,7 @@ export function HeaderRecordingSettings(): React.JSX.Element {
           style={
             {
               WebkitAppRegion: 'no-drag',
-              top: 'calc(100% - 4px)',
-              paddingTop: 10
+              top: 'calc(100% + 6px)'
             } as React.CSSProperties
           }
           onMouseDown={(e) => e.stopPropagation()}
