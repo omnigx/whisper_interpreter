@@ -85,7 +85,10 @@ export function AudioControlPanel({
   const syncRecording = Boolean(audio.syncRecording)
 
   return (
-    <div className="flex flex-wrap items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 py-2">
+    <div className="flex items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 py-2">
+      {/* 左半（原始音频）：电平 / 麦克风 / 同步录音 / 增益 —— 半区等宽，
+          右缘即分割线，与主内容区两栏分界（窗口 50%）同一轴线 */}
+      <div className="flex min-w-0 flex-1 items-center gap-4">
       {/* 1. 输入电平 */}
       <LevelMeter active={isListening} />
 
@@ -139,10 +142,8 @@ export function AudioControlPanel({
         </label>
       </div>
 
-      {/* 3. 分割线左＝原始音频（电平/麦克风/增益），右＝语义拆分（片段/停顿/VAD）。
-          三条滑块 flex-1 严格等宽，增益右端即分割线。
+      {/* 3. 增益 —— 撑满左半剩余宽度，右端正好落在分割线。
           音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减） */}
-      <div className="flex min-w-0 flex-1 items-end gap-8">
         <div className="flex min-w-32 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>增益 Gain</span>
@@ -165,12 +166,12 @@ export function AudioControlPanel({
             title="1× 以下按 0.1 细调衰减（替代音量），1–2× 每 0.25，2.5× 起每 0.5 至 8×。音量请用 Bosch 主机硬件旋钮"
           />
         </div>
+      </div>
 
-        <div
-          className="my-0.5 w-px self-stretch bg-[var(--border)]"
-          aria-hidden="true"
-        />
+      <div className="w-px shrink-0 self-stretch bg-[var(--border)]" aria-hidden="true" />
 
+      {/* 右半（语义拆分）：片段 / 断句停顿 / PCM+VAD 贴右 */}
+      <div className="flex min-w-0 flex-1 items-center gap-4">
         <div className="flex min-w-32 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>片段 Segment</span>
@@ -207,16 +208,16 @@ export function AudioControlPanel({
             title="静音达到该时长即断句送译：快语速讲者 0.4–0.6s；一般 0.7–0.9s；非母语/慢速 1.0–1.5s。对整句(SenseVoice/FW)与流式(Paraformer)同时生效。"
           />
         </div>
-      </div>
 
-      {/* 4. PCM / VAD — 贴右 */}
-      <div className="ml-auto flex shrink-0 flex-col items-end gap-0 text-[10px] leading-tight text-[var(--text-muted)]">
-        <span className="whitespace-nowrap">
-          PCM {TARGET_LABEL(contextSampleRate)} · 帧 {framesEmitted}
-        </span>
-        <span className="whitespace-nowrap">
-          VAD {vadEngine ?? '—'} · 切段 {vadSegmentCount}
-        </span>
+        {/* 4. PCM / VAD — 贴右（右半内，位置不变） */}
+        <div className="ml-auto flex shrink-0 flex-col items-end gap-0 text-[10px] leading-tight text-[var(--text-muted)]">
+          <span className="whitespace-nowrap">
+            PCM {TARGET_LABEL(contextSampleRate)} · 帧 {framesEmitted}
+          </span>
+          <span className="whitespace-nowrap">
+            VAD {vadEngine ?? '—'} · 切段 {vadSegmentCount}
+          </span>
+        </div>
       </div>
     </div>
   )
