@@ -5,6 +5,7 @@ import { AppFooter } from '../components/AppFooter'
 import { EngineSettingsPanel } from '../components/EngineSettingsPanel'
 import { HeaderDisplaySettings } from '../components/HeaderDisplaySettings'
 import { HeaderEngineSettings } from '../components/HeaderEngineSettings'
+import { HeaderInputSource } from '../components/HeaderInputSource'
 import { HeaderRecordingSettings } from '../components/HeaderRecordingSettings'
 import { LanguageTag } from '../components/LanguageTag'
 import { TermsPanel } from '../components/TermsPanel'
@@ -71,7 +72,6 @@ export function FullSizeMode({
     startListening,
     stopListening,
     restartListening,
-    setVolumeLive,
     setGainLive,
     setMaxSentenceLive,
     setSilenceLive,
@@ -257,6 +257,7 @@ export function FullSizeMode({
           </button>
 
           <HeaderRecordingSettings />
+          <HeaderInputSource onInputSource={(mode) => void setInputSourceLive(mode)} />
           <HeaderEngineSettings />
           <HeaderDisplaySettings />
           <WindowControls />
@@ -267,11 +268,9 @@ export function FullSizeMode({
         devices={devices}
         vadSegmentCount={vadSegmentCount}
         vadEngine={vadEngine}
-        onVolume={setVolumeLive}
         onGain={setGainLive}
         onMaxSentence={setMaxSentenceLive}
         onSilence={setSilenceLive}
-        onInputSource={(mode) => void setInputSourceLive(mode)}
         onDevice={(id) => void setDeviceLive(id)}
         onRefreshDevices={() => void refreshDevices()}
         onSyncRecordingChange={(enabled) => void setSyncRecordingLive(enabled)}

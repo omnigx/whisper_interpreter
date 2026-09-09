@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react'
 import {
-  AUDIO_INPUT_SOURCE_OPTIONS,
   VAD_SILENCE_MIN_MS,
   VAD_SILENCE_MAX_MS,
-  VAD_SILENCE_STEP_MS,
-  type AudioInputSource
+  VAD_SILENCE_STEP_MS
 } from '@shared/types'
 import { useAppStore } from '../stores/appStore'
 import { subscribeMeter, type MeterSnapshot } from '../services/meterBus'
@@ -13,21 +11,23 @@ interface AudioControlPanelProps {
   devices: MediaDeviceInfo[]
   vadSegmentCount: number
   vadEngine?: 'silero' | 'energy' | null
-  onVolume: (v: number) => void
   onGain: (g: number) => void
   onMaxSentence: (ms: number) => void
   onSilence: (ms: number) => void
-  onInputSource: (mode: AudioInputSource) => void
   onDevice: (deviceId: string) => void
   onRefreshDevices: () => void
   /** Toggle sync recording (may start/stop mid-session) */
   onSyncRecordingChange?: (enabled: boolean) => void
 }
 
-/** Discrete nonlinear gain steps (ear-friendly). */
+/**
+ * Discrete nonlinear gain steps (ear-friendly).
+ * Sub-2× now steps by 0.1 — attenuation duty formerly covered by the removed
+ * volume slider (gain × volume multiply in series, so gain <1 = attenuation).
+ */
 export const GAIN_STEPS: number[] = (() => {
   const steps: number[] = []
-  for (let g = 0; g <= 2; g += 0.25) {
+  for (let g = 0; g <= 2; g += 0.1) {
     steps.push(Number(g.toFixed(2)))
   }
   for (let g = 2.5; g <= 8; g += 0.5) {
@@ -63,11 +63,9 @@ export function AudioControlPanel({
   devices,
   vadSegmentCount,
   vadEngine,
-  onVolume,
   onGain,
   onMaxSentence,
   onSilence,
-  onInputSource,
   onDevice,
   onRefreshDevices,
   onSyncRecordingChange
@@ -114,34 +112,7 @@ export function AudioControlPanel({
         </div>
       </div>
 
-      {/* 2b. 输入源（线上会议：系统声音环回，免驱动） */}
-      <div className="flex shrink-0 flex-col gap-0.5">
-        <span className={LABEL} title="线上会议选「系统声音」或「系统+麦克风」：环回采集系统播放音频，免驱动、会议软件无感">
-          输入源
-        </span>
-        <div
-          className="inline-flex items-center rounded border border-[var(--border)] bg-[var(--bg-elevated)] p-0.5"
-          role="group"
-          aria-label="输入源"
-        >
-          {AUDIO_INPUT_SOURCE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              title={opt.hint}
-              aria-pressed={audio.inputSource === opt.value}
-              onClick={() => onInputSource(opt.value)}
-              className={`inline-flex h-[22px] items-center whitespace-nowrap rounded px-2 text-[11px] font-medium transition ${
-                audio.inputSource === opt.value
-                  ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text)]'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* 2b. 输入源已移至顶栏「输入源」按钮（会前预配置项，不占常驻空间） */}
 
       {/* 2c. 同步录音（格式在顶栏「录音设置」中配置） */}
       <div className="flex shrink-0 flex-col gap-0.5">
@@ -164,26 +135,9 @@ export function AudioControlPanel({
         </label>
       </div>
 
-      {/* 3. Volume | Gain | Segment | Sentence pause — last cell fills the row */}
+      {/* 3. Gain | Segment | Sentence pause — last cell fills the row.
+          音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减） */}
       <div className="flex min-w-0 flex-1 items-end gap-8">
-        <div className="flex w-40 shrink-0 flex-col gap-0.5">
-          <div className={`flex items-center justify-between ${LABEL}`}>
-            <span>音量 Volume</span>
-            <span className="tabular-nums tracking-normal text-[var(--text)]">
-              {Math.round(audio.volume * 100)}%
-            </span>
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={audio.volume}
-            onChange={(e) => onVolume(Number(e.target.value))}
-            className="w-full accent-[var(--accent)]"
-          />
-        </div>
-
         <div className="flex w-40 shrink-0 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>增益 Gain</span>
@@ -203,7 +157,7 @@ export function AudioControlPanel({
               if (typeof next === 'number') onGain(next)
             }}
             className="w-full accent-[var(--accent)]"
-            title="低增益细调 0.25；2× 以上粗调 0.5"
+            title="0–2× 细调 0.1（含衰减）；2× 以上粗调 0.5。音量请用 Bosch 主机硬件旋钮"
           />
         </div>
 
