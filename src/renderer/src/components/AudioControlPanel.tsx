@@ -142,9 +142,14 @@ export function AudioControlPanel({
         </label>
       </div>
 
-      {/* 3. 增益 —— 撑满左半剩余宽度，右端正好落在分割线。
-          音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减） */}
-        <div className="flex min-w-32 flex-1 flex-col gap-0.5">
+      {/* 3. 增益 —— 显式 calc 宽度＝右半净宽公式 (半区 − VAD(w-44=176) − 2×gap-4)/2，
+          与片段/断句停顿逐像素等宽；ml-auto 右贴分割线。
+          音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减）。
+          注意：208px 与下方 w-44 + gap-4 耦合，改动需同步 */}
+        <div
+          className="ml-auto flex min-w-32 flex-none flex-col gap-0.5"
+          style={{ width: 'calc((100% - 208px) / 2)' }}
+        >
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>增益 Gain</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -209,8 +214,8 @@ export function AudioControlPanel({
           />
         </div>
 
-        {/* 4. PCM / VAD — 贴右（右半内，位置不变） */}
-        <div className="ml-auto flex shrink-0 flex-col items-end gap-0 text-[10px] leading-tight text-[var(--text-muted)]">
+        {/* 4. PCM / VAD —— 贴右（右半内，位置不变）。固定 w-44 使增益侧 calc 公式精确 */}
+        <div className="ml-auto flex w-44 shrink-0 flex-col items-end gap-0 text-[10px] leading-tight text-[var(--text-muted)]">
           <span className="whitespace-nowrap">
             PCM {TARGET_LABEL(contextSampleRate)} · 帧 {framesEmitted}
           </span>
