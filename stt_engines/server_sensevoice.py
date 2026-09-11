@@ -1,11 +1,48 @@
 import asyncio
 import websockets
 import numpy as np
+import os
 import re
 import sys
-import time
+from pathlib import Path
 
 print("--- 启动 SenseVoice 稳定版 STT 服务 ---")
+
+# 离线启动：funasr 收到 hub id（iic/...）时会向 modelscope 校验远程 revision，
+# 断网/弱网时启动被卡住。下面优先把模型解析成本地缓存路径（零网络请求），
+# 仅在本地完全找不到缓存时才回退 hub id（此时首次下载本就需要联网）。
+# 如需强制刷新模型：删除对应缓存目录，或用 SENSEVOICE_MODEL_DIR 指定新目录。
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+
+def resolve_model_source():
+    override = os.environ.get("SENSEVOICE_MODEL_DIR")
+    if override and Path(override).exists():
+        return override
+    base = Path(os.environ.get("MODELSCOPE_CACHE") or Path.home() / ".cache" / "modelscope")
+    # 新旧几代 modelscope 缓存布局都认；新版在 snapshots/<rev>/ 下
+    roots = [
+        base / "models" / "iic--SenseVoiceSmall",
+        base / "hub" / "models" / "iic" / "SenseVoiceSmall",
+        base / "hub" / "iic" / "SenseVoiceSmall",
+        Path(__file__).resolve().parent / "models" / "SenseVoiceSmall",
+    ]
+
+    def ready(p: Path) -> bool:
+        return (p / "config.yaml").exists() or (p / "config.json").exists()
+
+    for root in roots:
+        if ready(root):
+            return str(root)
+        snap = root / "snapshots"
+        if snap.is_dir():
+            for rev in sorted(snap.iterdir()):
+                if ready(rev):
+                    return str(rev)
+    print("⚠️ 未找到本地模型缓存，将按 hub id 加载（需要联网）")
+    return "iic/SenseVoiceSmall"
+
+
 try:
     from funasr import AutoModel
     import torch
@@ -17,14 +54,17 @@ except ImportError as e:
 compute_device = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(f"-> 策略：使用 {compute_device} 进行运算")
 
+model_source = resolve_model_source()
+print(f"-> 模型来源：{model_source}")
+
 try:
     model = AutoModel(
-        model="iic/SenseVoiceSmall", 
-        trust_remote_code=True, 
-        device=compute_device, 
+        model=model_source,
+        trust_remote_code=True,
+        device=compute_device,
         disable_update=True
     )
-    print(f"✅ SenseVoice 模型加载彻底完成！")
+    print("✅ SenseVoice 模型加载彻底完成！")
 except Exception as e:
     print(f"❌ 模型加载崩溃: {e}")
     sys.exit(1)
@@ -44,12 +84,11 @@ async def handle_audio(websocket):
                 continue
 
             if isinstance(message, bytes):
-                print(f"📥 收到音频包 {len(message)} bytes", flush=True)
                 audio_data = np.frombuffer(message, dtype=np.int16).astype(np.float32) / 32768.0
-                
-                # 如果音频太短（少于0.5秒），忽略以防杂音报错
-                if len(audio_data) < 16000 * 0.5:
-                    print(f"⏭️ 音频过短 ({len(audio_data)/16000:.2f}s)，跳过", flush=True)
+
+                # 过短音频丢弃（<0.15s 基本是噪声/残留）。
+                # 原 0.5s 门槛会把真实短句（"好的""对"等应答）整个吞掉。
+                if len(audio_data) < 16000 * 0.15:
                     continue
 
                 res = model.generate(input=audio_data, language="auto", use_itn=True)
@@ -57,10 +96,9 @@ async def handle_audio(websocket):
                     raw_text = res[0]['text']
                     clean_result = clean_text(raw_text)
                     if clean_result:
-                        # SenseVoice 直接返回纯文本结果
                         await websocket.send(clean_result)
                         print(f"✅ 识别结果: {clean_result}", flush=True)
-                        
+
     except websockets.exceptions.ConnectionClosed:
         print("🔴 客户端已断开", flush=True)
     except Exception as e:

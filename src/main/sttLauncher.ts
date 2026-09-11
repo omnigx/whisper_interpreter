@@ -270,6 +270,19 @@ export function registerSttLauncher(): void {
       )
   )
 
+  /** Port probe only — never spawns. Mirrors what auto-launch would reuse. */
+  ipcMain.handle('stt-launcher:status', (_event, engineKey: unknown) => {
+    const spec = ENGINES[typeof engineKey === 'string' ? engineKey : '']
+    if (!spec) return Promise.resolve({ ok: false, running: false, error: '未知引擎' })
+    return probePort(spec.port).then((running) => ({ ok: true, running, port: spec.port }))
+  })
+
+  /** Kill only engines this app spawned (user-started .bat instances stay). */
+  ipcMain.handle('stt-launcher:stop', () => {
+    killSpawnedEngines()
+    return { ok: true }
+  })
+
   ipcMain.handle('stt-launcher:stop-others', (_event, keepKey: unknown) => {
     stopOtherEngines(typeof keepKey === 'string' ? keepKey : '')
   })

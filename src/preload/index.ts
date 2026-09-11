@@ -121,6 +121,16 @@ const api = {
   stopOtherSttEngines: (keep: string): Promise<void> =>
     ipcRenderer.invoke('stt-launcher:stop-others', keep),
 
+  /** Port probe only — engine running? (never spawns). */
+  getSttEngineStatus: (
+    engine: string
+  ): Promise<{ ok: boolean; running: boolean; port?: number; error?: string }> =>
+    ipcRenderer.invoke('stt-launcher:status', engine),
+
+  /** Kill engines this app spawned (user-started .bat instances stay). */
+  stopSttEngines: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('stt-launcher:stop'),
+
   /** Start a new STT/LLM JSONL pair (called when a listening session begins) */
   rotateSessionLog: (): void => {
     ipcRenderer.send('session-log:rotate')

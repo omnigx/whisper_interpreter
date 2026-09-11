@@ -3,6 +3,7 @@ import {
   defaultSttModel,
   defaultSttWebsocketUrl,
   getActiveLlm,
+  localSttLauncherKey,
   type SttProviderKind
 } from '@shared/types'
 import { fetchOllamaModels, pickPreferredOllamaModel } from '../services/llm'
@@ -44,7 +45,53 @@ export function HeaderEngineSettings(): React.JSX.Element {
   const [modelsLoading, setModelsLoading] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
+  // Local engine process control (spawned engines only; cloud STT hides this)
+  const launcherKey = localSttLauncherKey(settings.stt.provider)
+  const [engineRunning, setEngineRunning] = useState<boolean | null>(null)
+  const [engineBusy, setEngineBusy] = useState(false)
+
   useClickOutside(rootRef, open, () => setOpen(false))
+
+  useEffect(() => {
+    if (!open || !launcherKey) return
+    let alive = true
+    const probe = (): void => {
+      void window.whisperApi
+        ?.getSttEngineStatus?.(launcherKey)
+        .then((r) => {
+          if (alive) setEngineRunning(Boolean(r?.running))
+        })
+        .catch(() => {
+          if (alive) setEngineRunning(null)
+        })
+    }
+    probe()
+    const timer = window.setInterval(probe, 2000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [open, launcherKey])
+
+  const startEngine = async (): Promise<void> => {
+    if (!launcherKey || engineBusy) return
+    setEngineBusy(true)
+    try {
+      await window.whisperApi?.ensureSttEngine?.(launcherKey, 60000)
+    } finally {
+      setEngineBusy(false)
+    }
+  }
+
+  const stopEngine = async (): Promise<void> => {
+    if (engineBusy) return
+    setEngineBusy(true)
+    try {
+      await window.whisperApi?.stopSttEngines?.()
+    } finally {
+      setEngineBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!open || !activeLlm || activeLlm.provider !== 'ollama') return
@@ -186,6 +233,55 @@ export function HeaderEngineSettings(): React.JSX.Element {
                 ))}
               </select>
             </label>
+
+            {launcherKey && (
+              <div className="flex flex-col gap-1.5 rounded border border-[var(--border)] px-2.5 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--text-muted)]">引擎进程</span>
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] ${
+                      engineRunning ? 'text-emerald-400' : 'text-[var(--text-muted)]'
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        engineRunning ? 'bg-emerald-400' : 'bg-slate-500'
+                      }`}
+                    />
+                    {engineBusy
+                      ? '处理中…'
+                      : engineRunning
+                        ? '运行中'
+                        : engineRunning === null
+                          ? '检测中'
+                          : '未启动'}
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={engineRunning === true || engineBusy}
+                    onClick={() => void startEngine()}
+                    className="flex-1 rounded bg-[var(--accent-soft)] px-2 py-1.5 text-[11px] font-medium text-[var(--accent)] transition hover:bg-[var(--accent)]/25 disabled:cursor-not-allowed disabled:opacity-40"
+                    title="在后台拉起引擎并等待模型就绪（10–40 秒）"
+                  >
+                    启动引擎
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!engineRunning || engineBusy}
+                    onClick={() => void stopEngine()}
+                    className="flex-1 rounded border border-[var(--border)] px-2 py-1.5 text-[11px] text-[var(--text-muted)] transition hover:border-[var(--danger)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    停止
+                  </button>
+                </div>
+                <p className="text-[10px] leading-snug text-[var(--text-muted)]/70">
+                  「开始听写」时也会自动拉起；停止仅作用于由本应用启动的引擎，
+                  手动 bat 启动的不受影响。6GB 显存只够一个引擎驻留，切换引擎会自动停掉其它。
+                </p>
+              </div>
+            )}
 
             <label className="flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
               LLM
