@@ -282,6 +282,14 @@ export function HeaderEngineSettings(): React.JSX.Element {
                   >
                     停止
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void window.whisperApi?.openSessionLogsDir?.()}
+                    className="rounded border border-[var(--border)] px-2 py-1.5 text-[11px] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]"
+                    title="打开日志目录：引擎运行详情在 stt_launcher.log（带时间戳，逐行记录）"
+                  >
+                    日志
+                  </button>
                 </div>
                 {engineError && (
                   <p className="text-[10px] leading-snug text-[var(--danger)]">
@@ -289,8 +297,9 @@ export function HeaderEngineSettings(): React.JSX.Element {
                   </p>
                 )}
                 <p className="text-[10px] leading-snug text-[var(--text-muted)]/70">
+                  引擎输出逐行记入 logs/stt_launcher.log（含识别结果与异常）；
                   「开始听写」时也会自动拉起；停止仅作用于由本应用启动的引擎，
-                  手动 bat 启动的不受影响。6GB 显存只够一个引擎驻留，切换引擎会自动停掉其它。
+                  6GB 显存只够一个引擎驻留，切换引擎自动互斥。
                 </p>
               </div>
             )}

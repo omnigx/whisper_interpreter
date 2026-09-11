@@ -143,9 +143,14 @@ function launcherLogPath(): string {
   return path.join(projectRoot(), 'logs', 'stt_launcher.log')
 }
 
+/** Console mirror is dev-noise (lands in the electron-vite terminal); the
+ *  authoritative record is always logs/stt_launcher.log. Opt in via
+ *  STT_LAUNCHER_VERBOSE=1 when debugging interactively. */
+const launcherVerbose = process.env['STT_LAUNCHER_VERBOSE'] === '1'
+
 function log(message: string): void {
   const line = `[${new Date().toISOString()}] ${message}\n`
-  console.log(`[stt-launcher] ${message}`)
+  if (launcherVerbose) console.log(`[stt-launcher] ${message}`)
   try {
     if (!logStream) {
       fs.mkdirSync(path.dirname(launcherLogPath()), { recursive: true })
