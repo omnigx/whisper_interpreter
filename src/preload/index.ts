@@ -87,6 +87,16 @@ const api = {
     ipcRenderer.send('subtitle:set-geometry', position, height)
   },
 
+  /** Subtitle window screen placement: enumerate displays (follow / fixed). */
+  listSubtitleDisplays: (): Promise<
+    Array<{ id: number; label: string; primary: boolean }>
+  > => ipcRenderer.invoke('subtitle:displays'),
+
+  /** Fired after persisting a new subtitle screen config — re-place now. */
+  notifySubtitleScreenConfigChanged: (): void => {
+    ipcRenderer.send('subtitle:screen-config-changed')
+  },
+
   /** Subtitle-window hotspot: temporarily lift / restore click-through while locked. */
   setSubtitleClickThrough: (ignore: boolean): void => {
     ipcRenderer.send('subtitle:set-click-through', Boolean(ignore))
@@ -173,16 +183,22 @@ const api = {
   getAppConfig: (): Promise<{
     recording_dir: string
     recording_format: '.wav' | '.mp3 320k' | '.flac'
+    subtitle_screen_mode: 'follow' | 'fixed'
+    subtitle_screen_id: number | null
   }> => ipcRenderer.invoke('app-config:get'),
 
   setAppConfig: (
     partial: Partial<{
       recording_dir: string
       recording_format: '.wav' | '.mp3 320k' | '.flac'
+      subtitle_screen_mode: 'follow' | 'fixed'
+      subtitle_screen_id: number | null
     }>
   ): Promise<{
     recording_dir: string
     recording_format: '.wav' | '.mp3 320k' | '.flac'
+    subtitle_screen_mode: 'follow' | 'fixed'
+    subtitle_screen_id: number | null
   }> => ipcRenderer.invoke('app-config:set', partial),
 
   pickRecordingDir: (): Promise<string | null> =>

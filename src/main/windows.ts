@@ -6,6 +6,7 @@ import {
   type SubtitleHeightPreset,
   type SubtitlePositionPreset
 } from '../shared/types'
+import { loadAppConfig } from './appConfig'
 
 const isDev = !app.isPackaged
 
@@ -99,8 +100,46 @@ function notifyMainSubtitleOpen(isOpen: boolean): void {
 
 /** Horizontal subtitle width: 75% of the work area (display-relative). */
 function subtitleWidth(): number {
-  const { width } = screen.getPrimaryDisplay().workArea
+  const { width } = subtitleTargetDisplay().workArea
   return Math.min(SUBTITLE_WIDTH_MAX, Math.round(width * SUBTITLE_WIDTH_RATIO))
+}
+
+/**
+ * Display the subtitle window should live on: a pinned display id if
+ * configured, otherwise whichever display hosts the main window (follow).
+ */
+function subtitleTargetDisplay(): Electron.Display {
+  const cfg = loadAppConfig()
+  if (cfg.subtitle_screen_mode === 'fixed' && cfg.subtitle_screen_id != null) {
+    const pinned = screen
+      .getAllDisplays()
+      .find((d) => d.id === cfg.subtitle_screen_id)
+    if (pinned) return pinned
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return screen.getDisplayMatching(mainWindow.getBounds())
+  }
+  return screen.getPrimaryDisplay()
+}
+
+/** Last preset applied — lets follow-mode reapply bounds on display switches. */
+let lastSubtitlePreset: { position: SubtitlePositionPreset; height: SubtitleHeightPreset } = {
+  position: 'bottom-center',
+  height: 'standard'
+}
+
+/**
+ * Re-place the subtitle window ONLY when it sits on the wrong display:
+ * manual drags inside the same display are preserved.
+ */
+function reapplySubtitleGeometry(): void {
+  if (!subtitleWindow || subtitleWindow.isDestroyed()) return
+  const target = subtitleTargetDisplay()
+  const current = screen.getDisplayMatching(subtitleWindow.getBounds())
+  if (current.id === target.id) return
+  subtitleWindow.setBounds(
+    subtitleBoundsFor(lastSubtitlePreset.position, lastSubtitlePreset.height)
+  )
 }
 
 /** Compute window bounds for a subtitle placement preset. */
@@ -108,7 +147,7 @@ function subtitleBoundsFor(
   position: SubtitlePositionPreset,
   height: SubtitleHeightPreset
 ): Electron.Rectangle {
-  const { width, height: workHeight, x, y } = screen.getPrimaryDisplay().workArea
+  const { width, height: workHeight, x, y } = subtitleTargetDisplay().workArea
 
   if (position === 'left-column' || position === 'right-column') {
     const w = Math.min(SUBTITLE_COLUMN_WIDTH, Math.floor(width * 0.5))
@@ -135,6 +174,7 @@ function applySubtitleGeometry(
   height: SubtitleHeightPreset
 ): void {
   if (!subtitleWindow || subtitleWindow.isDestroyed()) return
+  lastSubtitlePreset = { position, height }
   subtitleWindow.setBounds(subtitleBoundsFor(position, height))
 }
 
@@ -149,7 +189,7 @@ export function createSubtitleWindow(): BrowserWindow {
     return subtitleWindow
   }
 
-  const { width, height, x, y } = screen.getPrimaryDisplay().workArea
+  const { width, height, x, y } = subtitleTargetDisplay().workArea
   const subWidth = subtitleWidth()
   const subHeight = SUBTITLE_HEIGHTS.standard
 
@@ -260,7 +300,21 @@ export function createMainWindow(): BrowserWindow {
   mainWindow.on('maximize', emitMaximized)
   mainWindow.on('unmaximize', emitMaximized)
 
+  // Follow mode: drag the main window across displays → the subtitle window
+  // hops to the new display (debounced; same-display manual drags are kept).
+  let followTimer: NodeJS.Timeout | null = null
+  const scheduleSubtitleFollow = (): void => {
+    if (followTimer) clearTimeout(followTimer)
+    followTimer = setTimeout(() => {
+      followTimer = null
+      reapplySubtitleGeometry()
+    }, 250)
+  }
+  mainWindow.on('move', scheduleSubtitleFollow)
+  mainWindow.on('resize', scheduleSubtitleFollow)
+
   mainWindow.on('closed', () => {
+    if (followTimer) clearTimeout(followTimer)
     mainWindow = null
     // Tear down satellite window with main
     if (subtitleWindow && !subtitleWindow.isDestroyed()) {
@@ -348,6 +402,24 @@ export function registerWindowIpc(): void {
     if (!isSubtitlePositionPreset(position) || !isSubtitleHeightPreset(height)) return
     applySubtitleGeometry(position, height)
   })
+
+  /** Enumerate displays for the 字幕窗口位置 setting (follow / fixed). */
+  ipcMain.handle('subtitle:displays', () => {
+    const primary = screen.getPrimaryDisplay()
+    return screen.getAllDisplays().map((d, i) => ({
+      id: d.id,
+      label: `显示器 ${i + 1}（${d.bounds.width}×${d.bounds.height}${
+        d.id === primary.id ? '，主屏' : ''
+      }）`,
+      primary: d.id === primary.id
+    }))
+  })
+
+  /** Fired after the renderer persists a new subtitle screen config. */
+  ipcMain.on('subtitle:screen-config-changed', () => reapplySubtitleGeometry())
+
+  // A pinned display disappearing (unplug) falls back to follow / primary.
+  screen.on('display-removed', () => reapplySubtitleGeometry())
 
   /**
    * Locked subtitle = pure overlay: the whole window passes mouse through

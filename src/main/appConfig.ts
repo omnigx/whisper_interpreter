@@ -7,11 +7,17 @@ import type { RecordingFormatId } from '../shared/types'
 export interface AppConfigFile {
   recording_dir: string
   recording_format: '.wav' | '.mp3 320k' | '.flac'
+  /** Subtitle window display: follow the main window, or pin to one screen */
+  subtitle_screen_mode: 'follow' | 'fixed'
+  /** Electron display.id when mode === 'fixed' (null = unset) */
+  subtitle_screen_id: number | null
 }
 
 const DEFAULT_CONFIG: AppConfigFile = {
   recording_dir: 'recordings',
-  recording_format: '.wav'
+  recording_format: '.wav',
+  subtitle_screen_mode: 'follow',
+  subtitle_screen_id: null
 }
 
 function projectRoot(): string {
@@ -68,7 +74,13 @@ export function loadAppConfig(): AppConfigFile {
         typeof raw.recording_dir === 'string' && raw.recording_dir.trim()
           ? raw.recording_dir.trim()
           : DEFAULT_CONFIG.recording_dir,
-      recording_format: normalizeFormat(raw.recording_format)
+      recording_format: normalizeFormat(raw.recording_format),
+      subtitle_screen_mode:
+        raw.subtitle_screen_mode === 'fixed' ? 'fixed' : 'follow',
+      subtitle_screen_id:
+        typeof raw.subtitle_screen_id === 'number' && Number.isFinite(raw.subtitle_screen_id)
+          ? raw.subtitle_screen_id
+          : null
     }
     return { ...cached }
   } catch (e) {
@@ -88,7 +100,17 @@ export function saveAppConfig(partial: Partial<AppConfigFile>): AppConfigFile {
     recording_format:
       partial.recording_format !== undefined
         ? normalizeFormat(partial.recording_format)
-        : prev.recording_format
+        : prev.recording_format,
+    subtitle_screen_mode:
+      partial.subtitle_screen_mode === 'fixed' ? 'fixed'
+      : partial.subtitle_screen_mode === 'follow' ? 'follow'
+      : prev.subtitle_screen_mode,
+    subtitle_screen_id:
+      partial.subtitle_screen_id === null
+        ? null
+        : typeof partial.subtitle_screen_id === 'number' && Number.isFinite(partial.subtitle_screen_id)
+          ? partial.subtitle_screen_id
+          : prev.subtitle_screen_id
   }
   ensureDir(path.dirname(configPath()))
   fs.writeFileSync(configPath(), JSON.stringify(next, null, 2), 'utf8')

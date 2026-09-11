@@ -94,7 +94,46 @@ export function HeaderDisplaySettings(): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   const lineHeight = display.lineHeight ?? 1
 
+  // Subtitle window display placement (follow main window / pinned display)
+  const [screenMode, setScreenMode] = useState<'follow' | 'fixed'>('follow')
+  const [screenId, setScreenId] = useState<number | null>(null)
+  const [displays, setDisplays] = useState<
+    Array<{ id: number; label: string; primary: boolean }>
+  >([])
+
   useClickOutside(rootRef, open, () => setOpen(false))
+
+  useEffect(() => {
+    if (!open) return
+    void window.whisperApi
+      ?.getAppConfig?.()
+      .then((cfg) => {
+        setScreenMode(cfg.subtitle_screen_mode === 'fixed' ? 'fixed' : 'follow')
+        setScreenId(cfg.subtitle_screen_id ?? null)
+      })
+      .catch(() => undefined)
+    void window.whisperApi
+      ?.listSubtitleDisplays?.()
+      .then((list) => setDisplays(Array.isArray(list) ? list : []))
+      .catch(() => undefined)
+  }, [open])
+
+  const applyScreenConfig = async (
+    mode: 'follow' | 'fixed',
+    id: number | null
+  ): Promise<void> => {
+    setScreenMode(mode)
+    setScreenId(id)
+    try {
+      await window.whisperApi?.setAppConfig?.({
+        subtitle_screen_mode: mode,
+        subtitle_screen_id: id
+      })
+      window.whisperApi?.notifySubtitleScreenConfigChanged?.()
+    } catch {
+      /* best effort — takes effect on next open */
+    }
+  }
 
   useEffect(() => {
     setSavedFontConfig(loadSavedFontConfig())
@@ -263,6 +302,66 @@ export function HeaderDisplaySettings(): React.JSX.Element {
             >
               默认
             </button>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-1.5 border-t border-[var(--border)] pt-2.5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+              字幕窗口位置
+            </p>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                aria-pressed={screenMode === 'follow'}
+                onClick={() => void applyScreenConfig('follow', null)}
+                className={`flex-1 rounded border px-2 py-1.5 text-[11px] transition ${
+                  screenMode === 'follow'
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]'
+                    : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/60'
+                }`}
+                title="字幕窗口跟随主窗口所在的显示器"
+              >
+                跟随主窗口
+              </button>
+              <button
+                type="button"
+                aria-pressed={screenMode === 'fixed'}
+                onClick={() => {
+                  const fallback =
+                    screenId ?? displays.find((d) => d.primary)?.id ?? displays[0]?.id ?? null
+                  void applyScreenConfig('fixed', fallback)
+                }}
+                className={`flex-1 rounded border px-2 py-1.5 text-[11px] transition ${
+                  screenMode === 'fixed'
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]'
+                    : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/60'
+                }`}
+                title="字幕窗口固定在指定显示器上"
+              >
+                固定显示器
+              </button>
+            </div>
+            {screenMode === 'fixed' && (
+              <label className="flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
+                显示器
+                <select
+                  className="rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-[11px] text-[var(--text)]"
+                  value={screenId ?? displays.find((d) => d.primary)?.id ?? displays[0]?.id ?? ''}
+                  onChange={(e) =>
+                    void applyScreenConfig('fixed', Number(e.target.value) || null)
+                  }
+                >
+                  {displays.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label}
+                    </option>
+                  ))}
+                  {displays.length === 0 && <option value="">（未检测到显示器）</option>}
+                </select>
+              </label>
+            )}
+            <p className="text-[10px] leading-snug text-[var(--text-muted)]/70">
+              跟随：主窗口拖到哪个屏，字幕跟随到哪个屏；固定：始终在所选显示器上。
+            </p>
           </div>
         </div>
       )}

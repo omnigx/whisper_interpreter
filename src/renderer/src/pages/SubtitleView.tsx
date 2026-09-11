@@ -320,6 +320,10 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
       (SUBTITLE_POSITION_ORDER.indexOf(prefs.position) + 1) % SUBTITLE_POSITION_ORDER.length
     ]!
 
+  // Column mode: the slim/standard toggle rotates its arrows sideways
+  const isColumnPosition =
+    prefs.position === 'left-column' || prefs.position === 'right-column'
+
   return (
     <div
       className="lyric-window group relative flex h-screen w-full select-none flex-col overflow-hidden"
@@ -462,9 +466,13 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
           aria-label={prefs.height === 'slim' ? '切换为标准高度' : '切换为精简高度'}
           aria-pressed={prefs.height === 'slim'}
           title={
-            prefs.height === 'slim'
-              ? '精简高度（每栏约 3 行）· 点击切换为标准'
-              : '标准高度（每栏约 5 行）· 点击切换为精简'
+            isColumnPosition
+              ? prefs.height === 'slim'
+                ? '精简（2/3 屏高）· 点击切换为标准（3/4 屏高）'
+                : '标准（3/4 屏高）· 点击切换为精简（2/3 屏高）'
+              : prefs.height === 'slim'
+                ? '精简高度（每栏约 3 行）· 点击切换为标准'
+                : '标准高度（每栏约 5 行）· 点击切换为精简'
           }
           className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
             prefs.height === 'slim'
@@ -474,7 +482,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
           style={{ WebkitAppRegion: 'no-drag' }}
           onClick={toggleHeight}
         >
-          <HeightIcon slim={prefs.height === 'slim'} />
+          <HeightIcon slim={prefs.height === 'slim'} horizontal={isColumnPosition} />
         </button>
 
         <button
@@ -716,8 +724,18 @@ function PositionIcon({
   )
 }
 
-/** Full-height / slim-height toggle (contract / expand chevrons). */
-function HeightIcon({ slim }: { slim: boolean }): React.JSX.Element {
+/**
+ * Full-height / slim-height toggle (contract / expand chevrons).
+ * Horizontal bars change vertical thickness (↕); columns rotate 90° so the
+ * chevrons point along the horizontal axis, matching the column metaphor.
+ */
+function HeightIcon({
+  slim,
+  horizontal
+}: {
+  slim: boolean
+  horizontal?: boolean
+}): React.JSX.Element {
   return (
     <svg
       width="14"
@@ -728,6 +746,7 @@ function HeightIcon({ slim }: { slim: boolean }): React.JSX.Element {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      className={horizontal ? 'rotate-90' : undefined}
       aria-hidden
     >
       {/* slim: chevrons fold toward the middle bar; standard: chevrons expand outward */}
