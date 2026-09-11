@@ -418,9 +418,6 @@ export function registerWindowIpc(): void {
   /** Fired after the renderer persists a new subtitle screen config. */
   ipcMain.on('subtitle:screen-config-changed', () => reapplySubtitleGeometry())
 
-  // A pinned display disappearing (unplug) falls back to follow / primary.
-  screen.on('display-removed', () => reapplySubtitleGeometry())
-
   /**
    * Locked subtitle = pure overlay: the whole window passes mouse through
    * (events still forwarded so hover/hotspots work). Unlock restores input.
@@ -453,6 +450,11 @@ export function setupAppLifecycle(): void {
   app.whenReady().then(() => {
     grantMediaPermissions()
     createMainWindow()
+
+    // A pinned display disappearing (unplug) falls back to follow / primary.
+    // (screen listeners must register after ready — touching `screen` earlier
+    // throws "can't be used before the app 'ready' event".)
+    screen.on('display-removed', () => reapplySubtitleGeometry())
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
