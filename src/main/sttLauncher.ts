@@ -74,39 +74,50 @@ function resolvePython(): string | null {
   const override = process.env['STT_SERVER_PYTHON']
   if (override && fs.existsSync(override)) return override
 
-  const roots = [
-    process.env['ProgramData'] ? path.join(process.env['ProgramData'], 'Miniconda3') : null,
-    process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], 'Miniconda3') : null,
-    process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], 'miniconda3') : null,
-    process.env['ProgramData'] ? path.join(process.env['ProgramData'], 'Anaconda3') : null,
-    process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], 'Anaconda3') : null,
-    // conda puts envs here when the base install is system-wide (ProgramData)
-    process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], '.conda', 'envs') : null
-  ].filter((p): p is string => Boolean(p))
-
-  for (const root of roots) {
-    const exe = path.join(root, 'envs', 'stt-server', 'python.exe')
-    if (fs.existsSync(exe)) return exe
+  const pythonAt = (envDir: string): string | null => {
+    const exe = path.join(envDir, 'python.exe')
+    return fs.existsSync(exe) ? exe : null
   }
 
-  // Conda keeps its env registry in ~/.conda/environments.txt — covers any
-  // install location (D:, custom prefixes) without hunting the whole disk.
+  const up = process.env['USERPROFILE']
+  const pd = process.env['ProgramData']
+  // Every candidate below is a directory that CONTAINS env folders directly
+  // (a base's envs/ dir, or the user-level .conda\envs dir).
+  const envDirs = [
+    pd ? path.join(pd, 'Miniconda3', 'envs') : null,
+    up ? path.join(up, 'Miniconda3', 'envs') : null,
+    up ? path.join(up, 'miniconda3', 'envs') : null,
+    pd ? path.join(pd, 'Anaconda3', 'envs') : null,
+    up ? path.join(up, 'Anaconda3', 'envs') : null,
+    up ? path.join(up, '.conda', 'envs') : null
+  ].filter((p): p is string => Boolean(p))
+
+  for (const dir of envDirs) {
+    const exe = pythonAt(path.join(dir, 'stt-server'))
+    if (exe) return exe
+  }
+
+  // conda's registry ~/.conda/environments.txt lists env dirs (and bases) at
+  // any custom location — covers D: drives and non-standard prefixes.
   try {
     const registry = path.join(os.homedir(), '.conda', 'environments.txt')
     if (fs.existsSync(registry)) {
       const lines = fs.readFileSync(registry, 'utf8').split(/\r?\n/)
       for (const line of lines) {
-        const envRoot = line.trim()
-        if (!envRoot) continue
-        const exe = path.join(envRoot, 'stt-server', 'python.exe')
-        if (fs.existsSync(exe)) return exe
+        const entry = line.trim()
+        if (!entry) continue
+        if (path.basename(entry).toLowerCase() === 'stt-server') {
+          const exe = pythonAt(entry)
+          if (exe) return exe
+        }
+        const exe = pythonAt(path.join(entry, 'envs', 'stt-server'))
+        if (exe) return exe
       }
     }
   } catch {
     /* registry unreadable — fall through */
   }
 
-  // Last resort: a python on PATH with the env's site-packages visible
   return null
 }
 
