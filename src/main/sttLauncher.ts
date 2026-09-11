@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import net from 'node:net'
+import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -78,13 +79,34 @@ function resolvePython(): string | null {
     process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], 'Miniconda3') : null,
     process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], 'miniconda3') : null,
     process.env['ProgramData'] ? path.join(process.env['ProgramData'], 'Anaconda3') : null,
-    process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], 'Anaconda3') : null
+    process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], 'Anaconda3') : null,
+    // conda puts envs here when the base install is system-wide (ProgramData)
+    process.env['USERPROFILE'] ? path.join(process.env['USERPROFILE'], '.conda', 'envs') : null
   ].filter((p): p is string => Boolean(p))
 
   for (const root of roots) {
     const exe = path.join(root, 'envs', 'stt-server', 'python.exe')
     if (fs.existsSync(exe)) return exe
   }
+
+  // Conda keeps its env registry in ~/.conda/environments.txt — covers any
+  // install location (D:, custom prefixes) without hunting the whole disk.
+  try {
+    const registry = path.join(os.homedir(), '.conda', 'environments.txt')
+    if (fs.existsSync(registry)) {
+      const lines = fs.readFileSync(registry, 'utf8').split(/\r?\n/)
+      for (const line of lines) {
+        const envRoot = line.trim()
+        if (!envRoot) continue
+        const exe = path.join(envRoot, 'stt-server', 'python.exe')
+        if (fs.existsSync(exe)) return exe
+      }
+    }
+  } catch {
+    /* registry unreadable — fall through */
+  }
+
+  // Last resort: a python on PATH with the env's site-packages visible
   return null
 }
 

@@ -49,6 +49,7 @@ export function HeaderEngineSettings(): React.JSX.Element {
   const launcherKey = localSttLauncherKey(settings.stt.provider)
   const [engineRunning, setEngineRunning] = useState<boolean | null>(null)
   const [engineBusy, setEngineBusy] = useState(false)
+  const [engineError, setEngineError] = useState<string | null>(null)
 
   useClickOutside(rootRef, open, () => setOpen(false))
 
@@ -76,8 +77,14 @@ export function HeaderEngineSettings(): React.JSX.Element {
   const startEngine = async (): Promise<void> => {
     if (!launcherKey || engineBusy) return
     setEngineBusy(true)
+    setEngineError(null)
     try {
-      await window.whisperApi?.ensureSttEngine?.(launcherKey, 60000)
+      const r = await window.whisperApi?.ensureSttEngine?.(launcherKey, 60000)
+      if (r && !r.ok) {
+        setEngineError(r.error ?? '启动失败（详见 logs/stt_launcher.log）')
+      }
+    } catch (e) {
+      setEngineError(e instanceof Error ? e.message : String(e))
     } finally {
       setEngineBusy(false)
     }
@@ -276,6 +283,11 @@ export function HeaderEngineSettings(): React.JSX.Element {
                     停止
                   </button>
                 </div>
+                {engineError && (
+                  <p className="text-[10px] leading-snug text-[var(--danger)]">
+                    ❌ 启动失败：{engineError}
+                  </p>
+                )}
                 <p className="text-[10px] leading-snug text-[var(--text-muted)]/70">
                   「开始听写」时也会自动拉起；停止仅作用于由本应用启动的引擎，
                   手动 bat 启动的不受影响。6GB 显存只够一个引擎驻留，切换引擎会自动停掉其它。
