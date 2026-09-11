@@ -77,6 +77,8 @@ export function AudioControlPanel({
     <div className="flex items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 py-2">
       {/* 左半（原始音频）：电平 / 增益 —— 半区等宽，右缘即分割线，
           与主内容区两栏分界（窗口 50%）同一轴线。
+          分配规则：右侧 (半区−VAD176−2×gap16)/2 平分给片段与停顿，
+          增益取同宽（calc）、右贴分割线，左半富余全部交给电平表（flex-1）。
           麦克风选择已移至顶栏「输入源」面板、同步录音移至「录音设置」面板：
           会前预配置项不占常驻空间，窄窗口（外接竖屏 50% 吸附）不再重叠 */}
       <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -209,7 +211,7 @@ function LevelMeter({ active }: { active: boolean }): React.JSX.Element {
   }, [active])
 
   return (
-    <div className="flex w-44 shrink-0 flex-col gap-0.5">
+    <div className="flex min-w-24 flex-1 flex-col gap-0.5">
       <div className={`flex items-center justify-between ${LABEL}`}>
         <span>输入电平</span>
         <span ref={pctRef} className="tabular-nums tracking-normal">
