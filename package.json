@@ -45,8 +45,15 @@
     "files": [
       "out/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "stt_engines",
+        "to": "stt_engines"
+      }
+    ],
     "win": {
       "target": [
+        "dir",
         "nsis"
       ]
     }

@@ -10,9 +10,15 @@ import { useAppStore } from '../stores/appStore'
 import { useClickOutside } from '../hooks/useClickOutside'
 
 /**
- * Header flyout for recording dir + format — same pattern as HeaderEngineSettings.
+ * Header flyout for sync recording + dir + format — same pattern as
+ * HeaderEngineSettings.
  */
-export function HeaderRecordingSettings(): React.JSX.Element {
+export function HeaderRecordingSettings({
+  onSyncRecordingChange
+}: {
+  /** Toggle sync recording (starts/stops the PCM file mid-session) */
+  onSyncRecordingChange?: (enabled: boolean) => void
+} = {}): React.JSX.Element {
   const audio = useAppStore((s) => s.settings.audio)
   const setAudio = useAppStore((s) => s.setAudio)
   const isListening = useAppStore((s) => s.isListening)
@@ -66,8 +72,12 @@ export function HeaderRecordingSettings(): React.JSX.Element {
         type="button"
         aria-label="录音设置"
         aria-expanded={open}
-        title="录音设置"
-        className="flex h-8 w-8 items-center justify-center rounded border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]"
+        title={`录音设置${syncOn ? '（同步录音已启用）' : ''}`}
+        className={`flex h-8 w-8 items-center justify-center rounded border transition ${
+          syncOn
+            ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+            : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
+        }`}
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         onClick={() => setOpen((v) => !v)}
       >
@@ -92,6 +102,27 @@ export function HeaderRecordingSettings(): React.JSX.Element {
           </p>
 
           <div className="flex flex-col gap-2.5">
+            <label className="flex cursor-pointer items-center justify-between gap-2 rounded border border-[var(--border)] px-2.5 py-2">
+              <span className="flex min-w-0 flex-col">
+                <span className="text-xs font-medium text-[var(--text)]">
+                  同步录音
+                </span>
+                <span className="mt-0.5 text-[10px] leading-snug text-[var(--text-muted)]">
+                  开始听写时同步落盘录音，与会话日志按时间戳配对
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                className="accent-[var(--accent)]"
+                checked={syncOn}
+                onChange={(e) => {
+                  const enabled = e.target.checked
+                  if (onSyncRecordingChange) onSyncRecordingChange(enabled)
+                  else setAudio({ syncRecording: enabled })
+                }}
+              />
+            </label>
+
             <div className="flex flex-col gap-1">
               <span className="text-[10px] text-[var(--text-muted)]">
                 录音目录

@@ -4,18 +4,26 @@ import { useAppStore } from '../stores/appStore'
 import { useClickOutside } from '../hooks/useClickOutside'
 
 /**
- * Header flyout for the STT capture source — same pattern as recording /
- * engine settings. Online vs offline is decided BEFORE a meeting starts, so
- * this is a low-frequency preflight control, not toolbar furniture.
+ * Header flyout for the STT capture source + mic device — same pattern as
+ * recording / engine settings. Online vs offline and device choice are decided
+ * BEFORE a meeting starts, so these are low-frequency preflight controls, not
+ * toolbar furniture.
  */
 export function HeaderInputSource({
+  devices,
+  onDevice,
+  onRefreshDevices,
   onInputSource
 }: {
+  devices: MediaDeviceInfo[]
+  onDevice: (deviceId: string) => void
+  onRefreshDevices: () => void
   onInputSource: (mode: AudioInputSource) => void
 }): React.JSX.Element {
   const inputSource = useAppStore(
     (s) => s.settings.audio.inputSource ?? 'mic'
   )
+  const deviceId = useAppStore((s) => s.settings.audio.deviceId)
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -97,6 +105,37 @@ export function HeaderInputSource({
                 </span>
               </button>
             ))}
+          </div>
+
+          <div className="mt-1 flex flex-col gap-1 border-t border-[var(--border)] pt-2">
+            <span className="text-[10px] text-[var(--text-muted)]">
+              麦克风设备
+            </span>
+            <div className="flex items-center gap-1.5">
+              <select
+                className="min-w-0 flex-1 truncate rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-[11px] text-[var(--text)]"
+                value={deviceId}
+                onChange={(e) => onDevice(e.target.value)}
+              >
+                <option value="">系统默认</option>
+                {devices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || `输入设备 ${d.deviceId.slice(0, 8)}`}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={onRefreshDevices}
+                className="shrink-0 whitespace-nowrap rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-[11px] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]"
+                title="刷新设备列表"
+              >
+                刷新
+              </button>
+            </div>
+            <p className="mt-0.5 text-[10px] leading-snug text-[var(--text-muted)]/70">
+              仅作用于麦克风输入；系统声音环回不受影响。监听中切换即时生效。
+            </p>
           </div>
 
           <p className="mt-2 text-[10px] leading-snug text-[var(--text-muted)]/70">

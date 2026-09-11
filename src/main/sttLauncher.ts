@@ -41,8 +41,12 @@ function projectRoot(): string {
   return app.getPath('userData')
 }
 
-/** Prefer <root>/stt_engines; fall back to the legacy sibling python_dir. */
+/** Prefer <root>/stt_engines; packaged builds ship it under resources/. */
 function resolveEngineRoot(): string {
+  if (app.isPackaged) {
+    const bundled = path.join(process.resourcesPath, 'stt_engines')
+    if (fs.existsSync(path.join(bundled, 'server_sensevoice.py'))) return bundled
+  }
   const preferred = path.join(projectRoot(), 'stt_engines')
   if (fs.existsSync(path.join(preferred, 'server_sensevoice.py'))) return preferred
   const legacy = path.resolve(projectRoot(), '..', 'python_dir')
@@ -51,10 +55,13 @@ function resolveEngineRoot(): string {
 }
 
 function resolveModelsDir(engineRoot: string): string | undefined {
+  // STT_MODELS_DIR lets a portable install point at the faster-whisper
+  // large-v3 folder without moving model files next to the exe.
   const candidates = [
+    process.env['STT_MODELS_DIR'],
     path.join(engineRoot, 'models'),
     path.resolve(engineRoot, '..', 'python_dir', 'models')
-  ]
+  ].filter((p): p is string => Boolean(p))
   for (const c of candidates) {
     if (fs.existsSync(c)) return c
   }

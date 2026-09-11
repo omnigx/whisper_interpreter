@@ -256,8 +256,15 @@ export function FullSizeMode({
             清空
           </button>
 
-          <HeaderRecordingSettings />
-          <HeaderInputSource onInputSource={(mode) => void setInputSourceLive(mode)} />
+          <HeaderRecordingSettings
+            onSyncRecordingChange={(enabled) => void setSyncRecordingLive(enabled)}
+          />
+          <HeaderInputSource
+            devices={devices}
+            onDevice={(id) => void setDeviceLive(id)}
+            onRefreshDevices={() => void refreshDevices()}
+            onInputSource={(mode) => void setInputSourceLive(mode)}
+          />
           <HeaderEngineSettings />
           <HeaderDisplaySettings />
           <WindowControls />
@@ -265,15 +272,11 @@ export function FullSizeMode({
       </header>
 
       <AudioControlPanel
-        devices={devices}
         vadSegmentCount={vadSegmentCount}
         vadEngine={vadEngine}
         onGain={setGainLive}
         onMaxSentence={setMaxSentenceLive}
         onSilence={setSilenceLive}
-        onDevice={(id) => void setDeviceLive(id)}
-        onRefreshDevices={() => void refreshDevices()}
-        onSyncRecordingChange={(enabled) => void setSyncRecordingLive(enabled)}
       />
 
       {isListening &&

@@ -17,13 +17,18 @@ let subtitleLocked = false
 const FULL_MIN = { width: 900, height: 560 }
 const FULL_DEFAULT = { width: 1280, height: 800 }
 /** Width unchanged; height fits ~5 records × 2 panes (~30px/record + chrome). */
-const SUBTITLE_SIZE = { width: 1000, height: 350 }
-const SUBTITLE_MIN = { width: 360, height: 180 }
+const SUBTITLE_MIN = { width: 280, height: 180 }
 /** Horizontal preset: slim ≈ 3 lines/pane, standard ≈ 5 lines/pane */
 const SUBTITLE_HEIGHTS: Record<SubtitleHeightPreset, number> = { standard: 350, slim: 240 }
-/** Vertical column preset geometry */
-const SUBTITLE_COLUMN_WIDTH = 520
-const SUBTITLE_COLUMN_HEIGHT_RATIO = 0.66
+/** Horizontal width scales with the display: 75% of the work area, capped */
+const SUBTITLE_WIDTH_RATIO = 0.75
+const SUBTITLE_WIDTH_MAX = 1600
+/** Vertical column preset geometry — slim = old 2/3 span, standard = 3/4 */
+const SUBTITLE_COLUMN_WIDTH = 450
+const SUBTITLE_COLUMN_HEIGHT_RATIOS: Record<SubtitleHeightPreset, number> = {
+  standard: 0.75,
+  slim: 0.66
+}
 const SUBTITLE_EDGE_INSET = 24
 
 function getPreloadPath(): string {
@@ -92,6 +97,12 @@ function notifyMainSubtitleOpen(isOpen: boolean): void {
   }
 }
 
+/** Horizontal subtitle width: 75% of the work area (display-relative). */
+function subtitleWidth(): number {
+  const { width } = screen.getPrimaryDisplay().workArea
+  return Math.min(SUBTITLE_WIDTH_MAX, Math.round(width * SUBTITLE_WIDTH_RATIO))
+}
+
 /** Compute window bounds for a subtitle placement preset. */
 function subtitleBoundsFor(
   position: SubtitlePositionPreset,
@@ -101,7 +112,7 @@ function subtitleBoundsFor(
 
   if (position === 'left-column' || position === 'right-column') {
     const w = Math.min(SUBTITLE_COLUMN_WIDTH, Math.floor(width * 0.5))
-    const h = Math.round(workHeight * SUBTITLE_COLUMN_HEIGHT_RATIO)
+    const h = Math.round(workHeight * SUBTITLE_COLUMN_HEIGHT_RATIOS[height])
     const px =
       position === 'left-column'
         ? x + SUBTITLE_EDGE_INSET
@@ -109,7 +120,7 @@ function subtitleBoundsFor(
     return { x: px, y: y + Math.round((workHeight - h) / 2), width: w, height: h }
   }
 
-  const w = Math.min(SUBTITLE_SIZE.width, Math.floor(width * 0.9))
+  const w = subtitleWidth()
   const h = SUBTITLE_HEIGHTS[height]
   const px = x + Math.round((width - w) / 2)
   const py =
@@ -139,8 +150,8 @@ export function createSubtitleWindow(): BrowserWindow {
   }
 
   const { width, height, x, y } = screen.getPrimaryDisplay().workArea
-  const subWidth = Math.min(SUBTITLE_SIZE.width, Math.floor(width * 0.9))
-  const subHeight = SUBTITLE_SIZE.height
+  const subWidth = subtitleWidth()
+  const subHeight = SUBTITLE_HEIGHTS.standard
 
   subtitleWindow = new BrowserWindow({
     width: subWidth,

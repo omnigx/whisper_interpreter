@@ -8,16 +8,11 @@ import { useAppStore } from '../stores/appStore'
 import { subscribeMeter, type MeterSnapshot } from '../services/meterBus'
 
 interface AudioControlPanelProps {
-  devices: MediaDeviceInfo[]
   vadSegmentCount: number
   vadEngine?: 'silero' | 'energy' | null
   onGain: (g: number) => void
   onMaxSentence: (ms: number) => void
   onSilence: (ms: number) => void
-  onDevice: (deviceId: string) => void
-  onRefreshDevices: () => void
-  /** Toggle sync recording (may start/stop mid-session) */
-  onSyncRecordingChange?: (enabled: boolean) => void
 }
 
 /**
@@ -64,90 +59,36 @@ function formatGain(g: number): string {
 const LABEL = 'text-[10px] tracking-wider text-[var(--text-muted)]'
 
 export function AudioControlPanel({
-  devices,
   vadSegmentCount,
   vadEngine,
   onGain,
   onMaxSentence,
-  onSilence,
-  onDevice,
-  onRefreshDevices,
-  onSyncRecordingChange
+  onSilence
 }: AudioControlPanelProps): React.JSX.Element {
   const audio = useAppStore((s) => s.settings.audio)
-  const setAudio = useAppStore((s) => s.setAudio)
   const isListening = useAppStore((s) => s.isListening)
   // Debug text only — meters paint via meterBus without React
   const framesEmitted = useAppStore((s) => s.framesEmitted)
   const contextSampleRate = useAppStore((s) => s.contextSampleRate)
   const gainIndex = gainToIndex(audio.gain)
   const gainValue = GAIN_STEPS[gainIndex] ?? audio.gain
-  const syncRecording = Boolean(audio.syncRecording)
 
   return (
     <div className="flex items-center gap-4 border-b border-[var(--border)] bg-[var(--bg-panel)] px-4 py-2">
-      {/* 左半（原始音频）：电平 / 麦克风 / 同步录音 / 增益 —— 半区等宽，
-          右缘即分割线，与主内容区两栏分界（窗口 50%）同一轴线 */}
+      {/* 左半（原始音频）：电平 / 增益 —— 半区等宽，右缘即分割线，
+          与主内容区两栏分界（窗口 50%）同一轴线。
+          麦克风选择已移至顶栏「输入源」面板、同步录音移至「录音设置」面板：
+          会前预配置项不占常驻空间，窄窗口（外接竖屏 50% 吸附）不再重叠 */}
       <div className="flex min-w-0 flex-1 items-center gap-4">
       {/* 1. 输入电平 */}
       <LevelMeter active={isListening} />
-
-      {/* 2. 麦克风 + 输入源 */}
-      <div className="flex w-36 shrink-0 flex-col gap-0.5">
-        <span className={LABEL}>麦克风</span>
-        <div className="flex items-center gap-1">
-          <select
-            className="w-full max-w-[140px] truncate rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] text-[var(--text)]"
-            value={audio.deviceId}
-            onChange={(e) => onDevice(e.target.value)}
-          >
-            <option value="">系统默认</option>
-            {devices.map((d) => (
-              <option key={d.deviceId} value={d.deviceId}>
-                {d.label || `输入设备 ${d.deviceId.slice(0, 8)}`}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={onRefreshDevices}
-            className="shrink-0 whitespace-nowrap rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)]"
-            title="刷新设备列表"
-          >
-            刷新
-          </button>
-        </div>
-      </div>
-
-      {/* 2b. 输入源已移至顶栏「输入源」按钮（会前预配置项，不占常驻空间） */}
-
-      {/* 2c. 同步录音（格式在顶栏「录音设置」中配置） */}
-      <div className="flex shrink-0 flex-col gap-0.5">
-        <span className={LABEL}>同步录音</span>
-        <label className="inline-flex h-[26px] cursor-pointer items-center gap-1.5 text-[11px] text-[var(--text)]">
-          <input
-            type="checkbox"
-            className="accent-[var(--accent)]"
-            checked={syncRecording}
-            onChange={(e) => {
-              const enabled = e.target.checked
-              if (onSyncRecordingChange) {
-                void onSyncRecordingChange(enabled)
-              } else {
-                setAudio({ syncRecording: enabled })
-              }
-            }}
-          />
-          启用
-        </label>
-      </div>
 
       {/* 3. 增益 —— 显式 calc 宽度＝右半净宽公式 (半区 − VAD(w-44=176) − 2×gap-4)/2，
           与片段/断句停顿逐像素等宽；ml-auto 右贴分割线。
           音量滑块已移除：外接音源自带硬件音量，软件侧由增益覆盖（<1× 即衰减）。
           注意：208px 与下方 w-44 + gap-4 耦合，改动需同步 */}
         <div
-          className="ml-auto flex min-w-32 flex-none flex-col gap-0.5"
+          className="ml-auto flex min-w-24 flex-none flex-col gap-0.5"
           style={{ width: 'calc((100% - 208px) / 2)' }}
         >
           <div className={`flex items-center justify-between ${LABEL}`}>
@@ -177,7 +118,7 @@ export function AudioControlPanel({
 
       {/* 右半（语义拆分）：片段 / 断句停顿 / PCM+VAD 贴右 */}
       <div className="flex min-w-0 flex-1 items-center gap-4">
-        <div className="flex min-w-32 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-24 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>片段 Segment</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
@@ -195,7 +136,7 @@ export function AudioControlPanel({
           />
         </div>
 
-        <div className="flex min-w-32 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-24 flex-1 flex-col gap-0.5">
           <div className={`flex items-center justify-between ${LABEL}`}>
             <span>断句停顿 Silence</span>
             <span className="tabular-nums tracking-normal text-[var(--text)]">
