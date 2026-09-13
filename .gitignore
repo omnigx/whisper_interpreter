@@ -29,3 +29,6 @@ __pycache__/
 
 # ZCode session artifacts
 .zcode/
+
+# 研究笔记（不入库）
+experiment/
