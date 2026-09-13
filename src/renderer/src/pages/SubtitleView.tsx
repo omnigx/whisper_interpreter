@@ -60,7 +60,11 @@ const BG_PRESETS = [
   { id: 'forest', label: '深绿', color: '#0A2E23' },
   { id: 'graphite', label: '深灰', color: '#1F2430' },
   { id: 'amber', label: '淡黄', color: '#FDE68A' },
-  { id: 'white', label: '纯白', color: '#F5F7FA' }
+  { id: 'white', label: '纯白', color: '#F5F7FA' },
+  // 莫兰迪低饱和系 — 浅色模式演示配黑字
+  { id: 'morandi-blue', label: '莫兰迪蓝', color: '#A9C3CF' },
+  { id: 'morandi-pink', label: '莫兰迪粉', color: '#D8BFC2' },
+  { id: 'morandi-green', label: '莫兰迪绿', color: '#B3C4B0' }
 ] as const
 
 /**
@@ -297,7 +301,8 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
 
   const bgHex = bgPresetColor(prefs.bgColor)
   const textOverride = textPresetColor(prefs.textColor)
-  // Uniform text override: cascade through the theme CSS variables
+  // Text override applies to the WORKSPACE panes only (source / target), not
+  // to the settings flyout or top chrome — those stay on theme colors.
   const themeVars = (
     textOverride
       ? {
@@ -331,12 +336,14 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        backgroundColor: hexToRgba(bgHex, prefs.backgroundOpacity / 100),
-        ...themeVars
+        backgroundColor: hexToRgba(bgHex, prefs.backgroundOpacity / 100)
       }}
     >
       {/* Full-bleed content — no top padding; overlays may cover text */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        style={themeVars as React.CSSProperties}
+      >
         {/* Source pane — 50% */}
         <div className="flex min-h-0 flex-col text-left" style={{ flex: 1 }}>
           <div className="header-title shrink-0 px-4 pt-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-[var(--source)]">
@@ -523,7 +530,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
               className="settings-panel absolute right-0 z-40 w-60 rounded border border-[var(--border)] bg-[var(--bg-panel)]/95 p-3 shadow-xl backdrop-blur-sm"
               style={{
                 WebkitAppRegion: 'no-drag',
-                top: 'calc(100% + 4px)'
+                top: '100%'
               }}
               onMouseDown={(e) => e.stopPropagation()}
             >
@@ -576,7 +583,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
 
               <div className="mb-3 flex flex-col gap-1.5">
                 <span className="text-[10px] text-[var(--text-muted)]">
-                  背景色（深色配亮字；淡黄/纯白建议配黑字）
+                  背景色（深色配亮字；莫兰迪/淡黄/纯白建议配黑字）
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {BG_PRESETS.map((p) => (

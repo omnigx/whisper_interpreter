@@ -207,6 +207,9 @@ export function ollamaApiRoot(baseUrl = 'http://127.0.0.1:11434/v1'): string {
   return withoutV1 || 'http://127.0.0.1:11434'
 }
 
+/** Legacy fallback list when the live Ollama inventory is unavailable. */
+export const OLLAMA_FALLBACK_MODELS = ['qwen2.5:7b', 'qwen2.5:14b']
+
 /**
  * List locally installed Ollama models via GET /api/tags.
  */

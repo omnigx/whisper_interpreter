@@ -2,7 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AppShell } from './components/AppShell'
 import { DisplayRoot } from './components/DisplayRoot'
+import { initTheme } from './utils/theme'
 import './styles/globals.css'
+
+initTheme()
 
 /** Legacy subtitle.html entry — redirect into hash route of the shared app. */
 if (!window.location.hash.includes('subtitle')) {

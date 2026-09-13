@@ -8,6 +8,7 @@ import {
   WESTERN_FONT_PRESETS
 } from '../utils/contentFonts'
 import { useClickOutside } from '../hooks/useClickOutside'
+import { setTheme as persistTheme, storedTheme, type AppTheme } from '../utils/theme'
 
 const SAVED_FONT_KEY = 'whisper-saved-font-config'
 
@@ -91,6 +92,7 @@ export function HeaderDisplaySettings(): React.JSX.Element {
   const setDisplay = useAppStore((s) => s.setDisplay)
   const [open, setOpen] = useState(false)
   const [savedFontConfig, setSavedFontConfig] = useState<SavedFontConfig | null>(null)
+  const [theme, setThemeState] = useState<AppTheme>(() => storedTheme())
   const rootRef = useRef<HTMLDivElement>(null)
   const lineHeight = display.lineHeight ?? 1
 
@@ -166,11 +168,16 @@ export function HeaderDisplaySettings(): React.JSX.Element {
     setDisplay({ ...DEFAULT_SETTINGS.display })
   }
 
+  const switchTheme = (next: AppTheme): void => {
+    persistTheme(next)
+    setThemeState(next)
+  }
+
   return (
     <div
       ref={rootRef}
       className="settings-wrapper relative"
-      style={{ WebkitAppRegion: 'no-drag' }}
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
       <button
         type="button"
@@ -302,6 +309,40 @@ export function HeaderDisplaySettings(): React.JSX.Element {
             >
               默认
             </button>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-1.5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+              界面主题
+            </p>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                aria-pressed={theme === 'dark'}
+                onClick={() => switchTheme('dark')}
+                className={`flex-1 rounded border px-2 py-1.5 text-[11px] transition ${
+                  theme === 'dark'
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]'
+                    : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/60'
+                }`}
+                title="深色模式（默认）"
+              >
+                深色
+              </button>
+              <button
+                type="button"
+                aria-pressed={theme === 'light'}
+                onClick={() => switchTheme('light')}
+                className={`flex-1 rounded border px-2 py-1.5 text-[11px] transition ${
+                  theme === 'light'
+                    ? 'border-[var(--accent)] bg-[var(--accent-soft)] font-medium text-[var(--accent)]'
+                    : 'border-[var(--border)] text-[var(--text)] hover:border-[var(--accent)]/60'
+                }`}
+                title="浅色模式：工作区与界面文字默认黑色，适合印刷与演示"
+              >
+                浅色
+              </button>
+            </div>
           </div>
 
           <div className="mt-3 flex flex-col gap-1.5 border-t border-[var(--border)] pt-2.5">

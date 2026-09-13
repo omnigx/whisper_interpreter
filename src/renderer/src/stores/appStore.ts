@@ -48,8 +48,11 @@ interface AppState {
   degraded: boolean
   /** Single-window morph: full | subtitle (renderer view) */
   windowMode: WindowMode
+  /** Live Ollama model inventory (fetched once at startup + on panel open) */
+  ollamaModels: string[]
 
   setDisplay: (partial: Partial<DisplaySettings>) => void
+  setOllamaModels: (models: string[]) => void
   setAudio: (partial: Partial<AudioSettings>) => void
   setStt: (partial: Partial<SttConfig>) => void
   setEngine: (partial: Partial<EngineSettings>) => void
@@ -105,10 +108,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   vadSegmentCount: 0,
   degraded: false,
   windowMode: 'full',
+  ollamaModels: [],
 
   setDisplay: (partial) =>
     set((s) => ({
       settings: { ...s.settings, display: { ...s.settings.display, ...partial } }
+    })),
+
+  setOllamaModels: (models) =>
+    set((s) => ({
+      ollamaModels: Array.isArray(models) && models.length > 0 ? models : s.ollamaModels
     })),
 
   setAudio: (partial) =>

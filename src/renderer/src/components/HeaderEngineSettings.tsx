@@ -6,7 +6,11 @@ import {
   localSttLauncherKey,
   type SttProviderKind
 } from '@shared/types'
-import { fetchOllamaModels, pickPreferredOllamaModel } from '../services/llm'
+import {
+  fetchOllamaModels,
+  OLLAMA_FALLBACK_MODELS,
+  pickPreferredOllamaModel
+} from '../services/llm'
 import { useAppStore } from '../stores/appStore'
 import { useClickOutside } from '../hooks/useClickOutside'
 
@@ -20,8 +24,6 @@ const STT_PROVIDERS: Array<{ value: SttProviderKind; label: string; tier: 'cloud
     { value: 'azure', label: 'Azure Speech', tier: 'cloud' },
     { value: 'aliyun', label: '阿里云', tier: 'cloud' }
   ]
-
-const OLLAMA_FALLBACK_MODELS = ['qwen2.5:7b', 'qwen2.5:14b']
 
 /**
  * Header click popover for quick STT + LLM switching.
@@ -39,9 +41,10 @@ export function HeaderEngineSettings(): React.JSX.Element {
   const selectedModel = activeLlm?.model ?? ''
 
   const [open, setOpen] = useState(false)
-  const [availableModels, setAvailableModels] = useState<string[]>([
-    ...OLLAMA_FALLBACK_MODELS
-  ])
+  const seedModels = useAppStore((s) => s.ollamaModels)
+  const [availableModels, setAvailableModels] = useState<string[]>(() =>
+    seedModels.length > 0 ? [...seedModels] : [...OLLAMA_FALLBACK_MODELS]
+  )
   const [modelsLoading, setModelsLoading] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -116,6 +119,7 @@ export function HeaderEngineSettings(): React.JSX.Element {
           ...OLLAMA_FALLBACK_MODELS.filter((n) => !names.includes(n))
         ]
         setAvailableModels(merged)
+        useAppStore.getState().setOllamaModels(names)
         const preferred = pickPreferredOllamaModel(merged, activeLlm.model)
         if (
           preferred &&

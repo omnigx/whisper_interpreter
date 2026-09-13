@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { AudioControlPanel } from '../components/AudioControlPanel'
+import { fetchOllamaModels, OLLAMA_FALLBACK_MODELS } from '../services/llm'
 import { AppFooter } from '../components/AppFooter'
 import { EngineSettingsPanel } from '../components/EngineSettingsPanel'
 import { HeaderDisplaySettings } from '../components/HeaderDisplaySettings'
@@ -79,6 +80,28 @@ export function FullSizeMode({
     setDeviceLive,
     setSyncRecordingLive
   } = useAudioPipeline()
+
+  // Startup inventory: fetch the Ollama model list once so the engine panel
+  // and the target-pane quick switch show real entries (4s cap, non-blocking;
+  // empty → surfaces fall back to the legacy hardcoded trio).
+  const ollamaModels = useAppStore((s) => s.ollamaModels)
+  useEffect(() => {
+    const ollama = useAppStore.getState().settings.llms.find((l) => l.provider === 'ollama')
+    if (!ollama) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 4000)
+    void fetchOllamaModels(ollama.baseUrl, controller.signal)
+      .then((names) => {
+        if (names.length > 0) useAppStore.getState().setOllamaModels(names)
+      })
+      .catch(() => undefined)
+      .finally(() => window.clearTimeout(timer))
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const sourceRef = useRef<HTMLDivElement>(null)
   const targetRef = useRef<HTMLDivElement>(null)
@@ -380,7 +403,8 @@ export function FullSizeMode({
                 </QuickMenuItem>
                 {settings.llms.flatMap((l) => {
                   if (l.provider === 'ollama') {
-                    return ['qwen2.5:7b', 'qwen2.5:14b', l.model]
+                    const localModels = ollamaModels.length > 0 ? ollamaModels : OLLAMA_FALLBACK_MODELS
+                    return [...localModels, l.model]
                       .filter((v, i, a) => a.indexOf(v) === i)
                       .map((m) => (
                         <QuickMenuItem

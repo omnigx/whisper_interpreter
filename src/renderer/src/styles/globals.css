@@ -18,6 +18,26 @@
   --zoom-scale: 1;
 }
 
+/*
+ * Light theme (印刷演示用): same variable contract, print-friendly surfaces.
+ * Workspace content (source/target/terms) and UI text default to black;
+ * stateful colors (accent blue / danger red) keep their semantic hues.
+ */
+html[data-theme='light'] {
+  --bg-deep: #eef1f5;
+  --bg-panel: #f7f9fb;
+  --bg-elevated: #ffffff;
+  --border: #d5dbe4;
+  --text: #111827;
+  --text-muted: #5f6b7a;
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --source: #111827;
+  --target: #111827;
+  --term: #111827;
+  --danger: #dc2626;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -56,6 +76,14 @@ body.subtitle-body {
 .panel-scroll::-webkit-scrollbar-thumb {
   background: #3a4a5e;
   border-radius: 3px;
+}
+
+html[data-theme='light'] .panel-scroll {
+  scrollbar-color: #b6bfcb transparent;
+}
+
+html[data-theme='light'] .panel-scroll::-webkit-scrollbar-thumb {
+  background: #b6bfcb;
 }
 
 .drag-region {
