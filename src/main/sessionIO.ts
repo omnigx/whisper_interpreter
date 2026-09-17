@@ -472,7 +472,19 @@ export function registerSessionIoIpc(): void {
         : {}),
       ...(typeof e.source_text === 'string' && e.source_text
         ? { source_text: e.source_text }
-        : {})
+        : {}),
+      ...(typeof e.direction === 'string' && e.direction
+        ? { direction: e.direction }
+        : {}),
+      ...(typeof e.first_token_ms === 'number' && Number.isFinite(e.first_token_ms)
+        ? { first_token_ms: e.first_token_ms }
+        : {}),
+      ...(typeof e.failed === 'boolean' ? { failed: e.failed } : {}),
+      ...(typeof e.echo_intercepted === 'boolean'
+        ? { echo_intercepted: e.echo_intercepted }
+        : {}),
+      ...(typeof e.wrong_lang === 'boolean' ? { wrong_lang: e.wrong_lang } : {}),
+      ...(typeof e.reason === 'string' && e.reason ? { reason: e.reason } : {})
     })
   })
 

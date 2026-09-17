@@ -15,6 +15,7 @@ import { useNetworkMonitor } from './useNetworkMonitor'
 import {
   buildTranslateUserContent,
   isEchoRepetition,
+  outputLangOk,
   resolveTranslationRoute,
   directionLabel
 } from '../services/translationDirection'
@@ -133,6 +134,20 @@ export function useAudioPipeline(): {
 
     while (translateQueueRef.current.length > 0) {
       const job = translateQueueRef.current.shift()!
+      // 噪声碎片预过滤：无汉字且去标点后 ≤2 字符（"." "I." "그."）。碎片+上文
+      // 是小模型整句幻觉（回译捏合）的主要触发源，不值得送翻
+      const unitCore = job.unit
+        .normalize('NFKC')
+        .replace(/[\s\p{P}\p{S}]+/gu, '')
+      if (!/[一-鿿]/.test(job.unit) && unitCore.length <= 2) {
+        logSessionEvent({
+          module: 'SYS',
+          model_name: '',
+          content: `噪声碎片未送翻: ${job.unit}`,
+          reason: 'junk_fragment'
+        })
+        continue
+      }
       const rawCfg = getActiveLlm(useAppStore.getState().settings)
       if (!rawCfg) {
         setPipelineStatus('目标语言翻译已关闭（LLM = N/A）')
@@ -228,10 +243,34 @@ export function useAudioPipeline(): {
           continue
         }
 
+        // 语种防线：输出落在错误语言时，带纠正指令重试一次
+        let finalText = assembled
+        let retriedLang = false
+        if (!outputLangOk(actualDirection, assembled)) {
+          retriedLang = true
+          setPipelineStatus(`译文语种错误，纠正重试 · ${routeHint}`)
+          try {
+            const langFixNote =
+              actualDirection === 'zh-en'
+                ? '\n\n【重要】上一次输出的语言错误。请只输出英文译文，译文中不得出现任何中文字符。'
+                : '\n\n【重要】上一次输出的语言错误。请只输出简体中文译文，不得整句使用英文。'
+            const corrected = await llm.translateStream(
+              userContent + langFixNote,
+              () => {},
+              ac.signal,
+              { systemPrompt }
+            )
+            if (corrected.trim()) finalText = corrected
+          } catch {
+            /* keep the first attempt */
+          }
+        }
+        const wrongLang = !outputLangOk(actualDirection, finalText)
+
         upsertTranslation({
           id,
           sourceId: linkedSourceId,
-          text: assembled,
+          text: finalText,
           streaming: false,
           timestamp: Date.now(),
           lang: detected,
@@ -241,13 +280,15 @@ export function useAudioPipeline(): {
         logSessionEvent({
           module: 'LLM',
           model_name: llmCfg.model || llm.label || llmCfg.id,
-          content: assembled,
+          content: finalText,
           latency: Math.round(performance.now() - translateStartedAt),
           ...(firstTokenAt !== null
             ? { first_token_ms: Math.round(firstTokenAt - translateStartedAt) }
             : {}),
           direction: actualDirection,
-          source_text: job.unit
+          source_text: job.unit,
+          ...(wrongLang ? { wrong_lang: true } : {}),
+          ...(retriedLang ? { reason: wrongLang ? 'lang_retry_failed' : 'lang_retry_ok' } : {})
         })
         historyRef.current = [...historyRef.current, job.unit].slice(-20)
         setPipelineStatus(

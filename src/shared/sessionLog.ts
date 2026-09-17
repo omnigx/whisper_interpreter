@@ -22,6 +22,8 @@ export interface SessionLogEntry {
   failed?: boolean
   /** LLM: output echoed the source verbatim and was discarded */
   echo_intercepted?: boolean
+  /** LLM: output landed in the wrong language (kept after corrective retry) */
+  wrong_lang?: boolean
   /** VAD: segment audio length; STT: utterance audio length */
   duration_ms?: number
   /** VAD: what ended the segment ('silence' | 'max-sentence' | 'manual') */

@@ -12,14 +12,16 @@ export const EN_TO_ZH_SYSTEM_PROMPT = `你是一个顶级的同声传译员。
 【规则与限制】：
 1. 绝对禁止直接复制粘贴整句原文。输出必须以中文句子结构为主。
 2. 允许并鼓励保留英文原语中的专业术语、专有名词和常见缩写（如 IT、CEO、名称等）。
-3. 绝对禁止输出“好的”、“翻译如下”等任何废话。直接给出最终译文。`
+3. 绝对禁止输出“好的”、“翻译如下”等任何废话。直接给出最终译文。
+4. 只翻译【最新一句】本身；【上文】仅作背景参考，绝不合并、复述或重新翻译上文里的句子。`
 
 export const ZH_TO_EN_SYSTEM_PROMPT = `你是一个顶级的同声传译员。
 【核心任务】：你接收到的文本是中文，请将其翻译为地道、专业的英文。
 【规则与限制】：
 1. 绝对禁止直接复制粘贴整句原文。
 2. 允许保留必要的中文拼音或特定的文化名词。
-3. 绝对禁止输出任何废话。直接给出最终译文。`
+3. 绝对禁止输出任何废话。直接给出最终译文。
+4. 只翻译【最新一句】本身；【上文】仅作背景参考，绝不合并、复述或重新翻译上文里的句子。`
 
 export function systemPromptForDirection(direction: TranslationDirection): string {
   return direction === 'zh-en' ? ZH_TO_EN_SYSTEM_PROMPT : EN_TO_ZH_SYSTEM_PROMPT
@@ -67,6 +69,21 @@ export function resolveTranslationRoute(sourceText: string, mainMode: Translatio
     reversed: actualDirection !== mainMode,
     systemPrompt: systemPromptForDirection(actualDirection)
   }
+}
+
+/**
+ * Output-side language guard. Short texts can't be judged (the echo guard
+ * handles junk); terms/proper nouns are tolerated within a ratio band.
+ */
+export function outputLangOk(direction: TranslationDirection, text: string): boolean {
+  const t = text.trim()
+  if (t.length < 4) return true
+  let cjk = 0
+  for (const c of t) {
+    if (c >= '一' && c <= '鿿') cjk += 1
+  }
+  const ratio = cjk / t.length
+  return direction === 'en-zh' ? ratio >= 0.15 : ratio <= 0.08
 }
 
 /** Strip spaces / punctuation for echo comparison */
