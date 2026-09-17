@@ -489,7 +489,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
           style={{ WebkitAppRegion: 'no-drag' }}
           onClick={toggleHeight}
         >
-          <HeightIcon slim={prefs.height === 'slim'} horizontal={isColumnPosition} />
+          <HeightIcon slim={prefs.height === 'slim'} />
         </button>
 
         <button
@@ -732,17 +732,11 @@ function PositionIcon({
 }
 
 /**
- * Full-height / slim-height toggle (contract / expand chevrons).
- * Horizontal bars change vertical thickness (↕); columns rotate 90° so the
- * chevrons point along the horizontal axis, matching the column metaphor.
+ * Full-height / slim-height toggle (contract / expand chevrons). Always
+ * vertical: both orientations change the window's HEIGHT (horizontal bar
+ * thickness, column 2/3↔3/4 span).
  */
-function HeightIcon({
-  slim,
-  horizontal
-}: {
-  slim: boolean
-  horizontal?: boolean
-}): React.JSX.Element {
+function HeightIcon({ slim }: { slim: boolean }): React.JSX.Element {
   return (
     <svg
       width="14"
@@ -753,7 +747,6 @@ function HeightIcon({
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={horizontal ? 'rotate-90' : undefined}
       aria-hidden
     >
       {/* slim: chevrons fold toward the middle bar; standard: chevrons expand outward */}

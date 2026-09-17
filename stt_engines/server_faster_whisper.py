@@ -3,8 +3,14 @@ import websockets
 import numpy as np
 import json
 import gc
+import sys
 import os
 from faster_whisper import WhisperModel
+
+# Windows 管道 stdout 默认 GBK：emoji/中文触发 UnicodeEncodeError 会直接崩溃
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # 屏蔽 Windows 环境下的 Symlink 警告
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"

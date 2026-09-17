@@ -6,6 +6,11 @@ import re
 import sys
 from pathlib import Path
 
+# Windows 管道 stdout 默认 GBK：emoji/中文触发 UnicodeEncodeError 会直接崩溃
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 print("--- 启动 SenseVoice 稳定版 STT 服务 ---")
 
 # 离线启动：funasr 收到 hub id（iic/...）时会向 modelscope 校验远程 revision，

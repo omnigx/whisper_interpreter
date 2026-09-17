@@ -5,6 +5,11 @@ import numpy as np
 import sys
 from funasr import AutoModel
 
+# Windows 管道 stdout 默认 GBK：emoji/中文触发 UnicodeEncodeError 会直接崩溃
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 print("--- 启动 Paraformer 流式 STT 服务 (增量拼接修复版) ---")
 print("1. 正在加载本地流式模型...")
 

@@ -225,6 +225,9 @@ async function ensureEngine(
       env: {
         ...process.env,
         PYTHONUNBUFFERED: '1',
+        // Piped stdout defaults to the ANSI codepage (GBK) on Windows —
+        // emoji prints in the engine scripts would crash the child.
+        PYTHONIOENCODING: 'utf-8',
         // faster-whisper large-v3 resolves its model folder from this
         ...(modelsDir ? { STT_MODELS_DIR: modelsDir } : {})
       }
