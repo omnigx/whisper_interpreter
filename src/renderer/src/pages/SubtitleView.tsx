@@ -5,6 +5,7 @@ import {
   DEFAULT_WESTERN_FONT
 } from '@shared/subtitleSync'
 import {
+  LANG_DISPLAY_NAMES,
   SUBTITLE_POSITION_ORDER,
   isSubtitleHeightPreset,
   isSubtitlePositionPreset,
@@ -366,7 +367,7 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
                     {pair.lowConfidence ? (
                       <span
                         className="mr-1 inline-flex translate-y-[-1px] items-center rounded border border-amber-400/40 bg-amber-500/15 px-1 py-px font-mono text-[10px] font-semibold text-amber-300"
-                        title={`识别语言异常（${pair.langTag ?? '?'}），可能误听——请人工核对`}
+                        title={`非中英源语种（引擎识别：${LANG_DISPLAY_NAMES[pair.langTag ?? ''] ?? pair.langTag ?? '未知'}）；若与现场语种不符，可能为误听——请核对源文与译文`}
                       >
                         ⚠{pair.langTag ?? '?'}
                       </span>

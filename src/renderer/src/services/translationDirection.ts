@@ -1,4 +1,4 @@
-import type { TranslationDirection } from '@shared/types'
+import { LANG_DISPLAY_NAMES, type TranslationDirection } from '@shared/types'
 import {
   detectLanguage,
   type DetectedLanguage
@@ -6,14 +6,6 @@ import {
 
 export type { DetectedLanguage }
 export { detectLanguage }
-
-export const EN_TO_ZH_SYSTEM_PROMPT = `你是一个顶级的同声传译员。
-【核心任务】：你接收到的文本是英语，请将其翻译为流畅、准确的简体中文。
-【规则与限制】：
-1. 绝对禁止直接复制粘贴整句原文。输出必须以中文句子结构为主。
-2. 允许并鼓励保留英文原语中的专业术语、专有名词和常见缩写（如 IT、CEO、名称等）。
-3. 绝对禁止输出“好的”、“翻译如下”等任何废话。直接给出最终译文。
-4. 只翻译【最新一句】本身；【上文】仅作背景参考，绝不合并、复述或重新翻译上文里的句子。`
 
 export const ZH_TO_EN_SYSTEM_PROMPT = `你是一个顶级的同声传译员。
 【核心任务】：你接收到的文本是中文，请将其翻译为地道、专业的英文。
@@ -23,8 +15,25 @@ export const ZH_TO_EN_SYSTEM_PROMPT = `你是一个顶级的同声传译员。
 3. 绝对禁止输出任何废话。直接给出最终译文。
 4. 只翻译【最新一句】本身；【上文】仅作背景参考，绝不合并、复述或重新翻译上文里的句子。`
 
-export function systemPromptForDirection(direction: TranslationDirection): string {
-  return direction === 'zh-en' ? ZH_TO_EN_SYSTEM_PROMPT : EN_TO_ZH_SYSTEM_PROMPT
+/**
+ * 外译中方向的系统提示词。engineTag 来自引擎 LID（SenseVoice <|xx|> /
+ * FW info.language）：标签认识时按实际语种点名（"你接收到的文本是法语"），
+ * 未知或缺失时按英语处理——模型对误标语种本身鲁棒，点名只为边际精度。
+ */
+export function systemPromptForDirection(
+  direction: TranslationDirection,
+  engineTag?: string | null
+): string {
+  if (direction === 'zh-en') return ZH_TO_EN_SYSTEM_PROMPT
+  const sourceName =
+    engineTag && LANG_DISPLAY_NAMES[engineTag] ? LANG_DISPLAY_NAMES[engineTag] : '英语'
+  return `你是一个顶级的同声传译员。
+【核心任务】：你接收到的文本是${sourceName}，请将其翻译为流畅、准确的简体中文。
+【规则与限制】：
+1. 绝对禁止直接复制粘贴整句原文。输出必须以中文句子结构为主。
+2. 允许并鼓励保留原语中的专业术语、专有名词和常见缩写（如 IT、CEO、名称等）。
+3. 绝对禁止输出“好的”、“翻译如下”等任何废话。直接给出最终译文。
+4. 只翻译【最新一句】本身；【上文】仅作背景参考，绝不合并、复述或重新翻译上文里的句子。`
 }
 
 export function directionLabel(direction: TranslationDirection): string {
@@ -66,6 +75,8 @@ export function resolveTranslationRoute(
   reversed: boolean
   systemPrompt: string
 } {
+  // Routing safety: only zh/en tags ever change the language pair; any other
+  // tag (ko/ja/fr…) is prompt-naming/display metadata and never flips direction.
   const detected =
     langTag === 'zh' || langTag === 'en' ? langTag : detectLanguage(sourceText)
   const actualDirection = resolveActualDirection(mainMode, detected)
@@ -73,7 +84,7 @@ export function resolveTranslationRoute(
     detected,
     actualDirection,
     reversed: actualDirection !== mainMode,
-    systemPrompt: systemPromptForDirection(actualDirection)
+    systemPrompt: systemPromptForDirection(actualDirection, langTag)
   }
 }
 

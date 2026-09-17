@@ -44,6 +44,22 @@ export interface DisplaySettings {
 /** Floating subtitle overlay display strategy */
 export type SubtitleDisplayMode = 'count' | 'time'
 
+/** Engine LID tag -> display name (prompt naming + UI badges). */
+export const LANG_DISPLAY_NAMES: Record<string, string> = {
+  zh: '中文',
+  en: '英语',
+  yue: '粤语',
+  ja: '日语',
+  ko: '韩语',
+  fr: '法语',
+  es: '西班牙语',
+  pt: '葡萄牙语',
+  ar: '阿拉伯语',
+  de: '德语',
+  ru: '俄语',
+  it: '意大利语'
+}
+
 /** Satellite subtitle window placement presets */
 export type SubtitlePositionPreset =
   | 'bottom-center' /** 默认：屏幕中下方横排 */

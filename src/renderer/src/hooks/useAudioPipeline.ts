@@ -72,7 +72,7 @@ export function useAudioPipeline(): {
   const llmRef = useRef<LlmClient | null>(null)
   /** Serial translation jobs; aborted jobs can unshift back to the head */
   const translateQueueRef = useRef<
-    Array<{ unit: string; sourceId?: string; langTag?: string }>
+    Array<{ unit: string; sourceId?: string; langTag?: string }> // langTag = raw engine tag
   >([])
   const translatingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -581,7 +581,7 @@ export function useAudioPipeline(): {
           ...(lowConf ? { low_confidence: true } : {})
         })
         sttFlushAtRef.current = 0
-        runTranslate(text, result.utteranceId, trustedTag ?? undefined)
+        runTranslate(text, result.utteranceId, rawTag || undefined)
       }
       client.onSystem = (message) => {
         const tip = message.trim()
