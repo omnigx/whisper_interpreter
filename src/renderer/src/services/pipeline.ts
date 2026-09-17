@@ -56,6 +56,8 @@ export interface SttPartialResult {
   text: string
   isFinal: boolean
   utteranceId: string
+  /** Engine LID tag (SenseVoice <|zh|> / FW info.language); null when absent */
+  lang?: string | null
 }
 
 export interface SileroVadHandle {

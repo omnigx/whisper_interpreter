@@ -91,7 +91,7 @@ function createFasterWhisperSttClient(config: SttConfig): SttClient {
           // Each WS text frame = one final sentence (backend may send many per audio chunk)
           utteranceSeq += 1
           const utteranceId = `fw-${Date.now()}-${utteranceSeq}-${Math.random().toString(36).slice(2, 7)}`
-          stt.onResult?.({ text, isFinal: true, utteranceId })
+          stt.onResult?.({ text, isFinal: true, utteranceId, lang: client?.takeLang() ?? null })
         },
         onSystem: (message) => {
           stt.onSystem?.(message)
@@ -154,7 +154,7 @@ function createSenseVoiceUtteranceSttClient(config: SttConfig): SttClient {
         reconnectDelayMs: 2000,
         onTranscript: (text) => {
           utteranceId = `sv-${Date.now()}`
-          stt.onResult?.({ text, isFinal: true, utteranceId })
+          stt.onResult?.({ text, isFinal: true, utteranceId, lang: client?.takeLang() ?? null })
         },
         onStatus: (s) => stt.onStatus?.(s),
         onError: (msg) => stt.onError?.(new Error(msg))

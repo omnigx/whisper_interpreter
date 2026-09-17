@@ -126,13 +126,21 @@ async def handle_audio(websocket, *args):
                     
                     # 一旦匹配到句末标点，立即单独作为一个文本包发送，避免多句连体
                     if buffer_text.endswith(TERMINAL_PUNCTUATION):
-                        await websocket.send(buffer_text.strip())
+                        await websocket.send(json.dumps({
+                            "type": "final",
+                            "text": buffer_text.strip(),
+                            "lang": getattr(info, "language", None)
+                        }))
                         print(f"输出单句转写: {buffer_text.strip()}")
                         buffer_text = "" # 清空缓冲区
                 
                 # 兜底逻辑：处理片段末尾未能带标点的残句
                 if buffer_text.strip():
-                    await websocket.send(buffer_text.strip())
+                    await websocket.send(json.dumps({
+                        "type": "final",
+                        "text": buffer_text.strip(),
+                        "lang": getattr(info, "language", None)
+                    }))
                     print(f"输出末尾转写: {buffer_text.strip()}")
                     
     except websockets.exceptions.ConnectionClosed:

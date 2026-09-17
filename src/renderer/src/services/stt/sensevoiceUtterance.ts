@@ -35,6 +35,8 @@ export class SenseVoiceUtteranceClient {
   private opts: SenseVoiceUtteranceOptions
   private buf: Int16Array[] = []
   private samples = 0
+  /** Engine LID tag captured from the latest JSON frame (null for plain text) */
+  private pendingLang: string | null = null
 
   constructor(opts: SenseVoiceUtteranceOptions = {}) {
     this.opts = opts
@@ -236,13 +238,27 @@ export class SenseVoiceUtteranceClient {
     if (!raw) return ''
     if (raw.startsWith('{')) {
       try {
-        const msg = JSON.parse(raw) as { text?: string; transcript?: string }
+        const msg = JSON.parse(raw) as {
+          text?: string
+          transcript?: string
+          lang?: string | null
+        }
+        this.pendingLang = typeof msg.lang === 'string' && msg.lang ? msg.lang : null
         return String(msg.text ?? msg.transcript ?? '').trim()
       } catch {
+        this.pendingLang = null
         return raw
       }
     }
+    this.pendingLang = null
     return raw
+  }
+
+  /** Engine LID tag from the just-delivered frame; resets on read. */
+  takeLang(): string | null {
+    const v = this.pendingLang
+    this.pendingLang = null
+    return v
   }
 
   private scheduleReconnect(gen: number): void {

@@ -46,6 +46,8 @@ export class FasterWhisperClient {
   /** VAD sentence buffer (Float32 chunks @ 16 kHz) */
   private sentenceBuffer: Float32Array[] = []
   private bufferedSamples = 0
+  /** Engine LID (info.language) captured from the latest JSON frame */
+  private pendingLang: string | null = null
 
   constructor(opts: FasterWhisperClientOptions = {}) {
     this.opts = opts
@@ -222,6 +224,7 @@ export class FasterWhisperClient {
           text?: string
           transcript?: string
           result?: string
+          lang?: string | null
         }
         if (msg.type === 'system') {
           const tip = (msg.message || msg.text || raw).trim()
@@ -229,6 +232,7 @@ export class FasterWhisperClient {
           return
         }
         const t = (msg.text || msg.transcript || msg.result || '').trim()
+        this.pendingLang = typeof msg.lang === 'string' && msg.lang ? msg.lang : null
         if (t) {
           this.opts.onTranscript?.(t)
           return
@@ -262,6 +266,13 @@ export class FasterWhisperClient {
     } catch {
       /* ignore */
     }
+  }
+
+  /** Engine LID tag from the just-delivered frame; resets on read. */
+  takeLang(): string | null {
+    const v = this.pendingLang
+    this.pendingLang = null
+    return v
   }
 
   private scheduleReconnect(): void {

@@ -210,8 +210,8 @@ export function FullSizeMode({
           >
             {(
               [
-                { value: 'en-zh' as TranslationDirection, label: '英译中' },
-                { value: 'zh-en' as TranslationDirection, label: '中译英' }
+                { value: 'en-zh' as TranslationDirection, label: '外译中' },
+                { value: 'zh-en' as TranslationDirection, label: '中译外' }
               ] as const
             ).map((opt) => (
               <button
@@ -356,6 +356,14 @@ export function FullSizeMode({
                 {transcripts.map((t) => (
                   <div key={t.id} className="text-[var(--text)]" style={itemGapStyle}>
                     <LanguageTag lang={t.lang ?? detectLanguage(t.text)} />
+                    {t.lowConfidence ? (
+                      <span
+                        className="mr-1 inline-flex translate-y-[-1px] items-center rounded border border-amber-400/40 bg-amber-500/15 px-1 py-px font-mono text-[10px] font-semibold text-amber-300"
+                        title={`识别语言异常（${t.langTag ?? '?'}），可能误听——请人工核对`}
+                      >
+                        ⚠{t.langTag ?? '?'}
+                      </span>
+                    ) : null}
                     <span className="text-content whitespace-pre-wrap break-words" style={textLineStyle}>
                       {t.text}
                     </span>

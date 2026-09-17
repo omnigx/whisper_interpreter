@@ -24,6 +24,10 @@ export interface SessionLogEntry {
   echo_intercepted?: boolean
   /** LLM: output landed in the wrong language (kept after corrective retry) */
   wrong_lang?: boolean
+  /** STT: engine LID tag (zh/en/ja/ko/yue/fr…) */
+  lang_tag?: string
+  /** STT: tag outside the trusted {zh, en} pair — possible misrecognition */
+  low_confidence?: boolean
   /** VAD: segment audio length; STT: utterance audio length */
   duration_ms?: number
   /** VAD: what ended the segment ('silence' | 'max-sentence' | 'manual') */

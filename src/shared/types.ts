@@ -86,7 +86,11 @@ export interface DialoguePair {
   id: string
   sttText: string
   translatedText: string
-  lang?: 'zh' | 'en' | 'unknown'
+  lang?: string
+  /** Raw engine LID tag passthrough (display only) */
+  langTag?: string
+  /** Tag outside trusted {zh, en} — possible misrecognition */
+  lowConfidence?: boolean
   timestamp: number
 }
 
@@ -476,8 +480,12 @@ export interface TranscriptSegment {
   text: string
   isFinal: boolean
   timestamp: number
-  /** Auto-LID result for this utterance */
-  lang?: 'zh' | 'en' | 'unknown'
+  /** Language used for the row tag — trusted engine tag or script heuristic */
+  lang?: string
+  /** Raw engine LID tag (zh/en/ja/ko/yue/fr…) — display metadata only */
+  langTag?: string
+  /** Tag outside the trusted {zh, en} pair — possible misrecognition */
+  lowConfidence?: boolean
 }
 
 export interface TranslationSegment {

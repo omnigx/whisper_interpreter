@@ -30,6 +30,8 @@ export function buildDialogueHistory(
       sttText: t.text,
       translatedText: tr?.text ?? '',
       lang: t.lang ?? tr?.lang,
+      ...(t.langTag ? { langTag: t.langTag } : {}),
+      ...(t.lowConfidence ? { lowConfidence: true } : {}),
       timestamp: tr?.timestamp ?? t.timestamp
     })
   }

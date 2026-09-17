@@ -484,6 +484,8 @@ export function registerSessionIoIpc(): void {
         ? { echo_intercepted: e.echo_intercepted }
         : {}),
       ...(typeof e.wrong_lang === 'boolean' ? { wrong_lang: e.wrong_lang } : {}),
+      ...(typeof e.lang_tag === 'string' && e.lang_tag ? { lang_tag: e.lang_tag } : {}),
+      ...(typeof e.low_confidence === 'boolean' ? { low_confidence: e.low_confidence } : {}),
       ...(typeof e.reason === 'string' && e.reason ? { reason: e.reason } : {})
     })
   })

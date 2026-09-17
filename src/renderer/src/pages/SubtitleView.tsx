@@ -363,6 +363,14 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
                 pair.sttText ? (
                   <div key={`s-${pair.id}`} style={itemGapStyle}>
                     <LanguageTag lang={pair.lang ?? detectLanguage(pair.sttText)} />
+                    {pair.lowConfidence ? (
+                      <span
+                        className="mr-1 inline-flex translate-y-[-1px] items-center rounded border border-amber-400/40 bg-amber-500/15 px-1 py-px font-mono text-[10px] font-semibold text-amber-300"
+                        title={`识别语言异常（${pair.langTag ?? '?'}），可能误听——请人工核对`}
+                      >
+                        ⚠{pair.langTag ?? '?'}
+                      </span>
+                    ) : null}
                     <span className="text-[var(--text)]" style={textLineStyle}>
                       {pair.sttText}
                     </span>

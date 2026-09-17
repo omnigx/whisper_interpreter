@@ -74,6 +74,9 @@ except Exception as e:
     print(f"❌ 模型加载崩溃: {e}")
     sys.exit(1)
 
+LANG_TAG_RE = re.compile(r'<\|(zh|en|ja|ko|yue)\|>')
+
+
 def clean_text(text):
     # 清理掉 SenseVoice 偶尔输出的 <|zh|> 这类语言标签
     text = re.sub(r'<\|.*?\|>', '', text)
@@ -100,9 +103,17 @@ async def handle_audio(websocket):
                 if res and len(res) > 0:
                     raw_text = res[0]['text']
                     clean_result = clean_text(raw_text)
+                    # 语言标签随译文回传（仅元数据，前端用于显示/疑义标记，
+                    # 绝不进入 LLM 提示词——8月误译教训的结构性隔离）
+                    m = LANG_TAG_RE.search(raw_text)
+                    lang_tag = m.group(1) if m else None
                     if clean_result:
-                        await websocket.send(clean_result)
-                        print(f"✅ 识别结果: {clean_result}", flush=True)
+                        await websocket.send(json.dumps({
+                            "type": "final",
+                            "text": clean_result,
+                            "lang": lang_tag
+                        }))
+                        print(f"✅ 识别结果[{lang_tag or '-'}]: {clean_result}", flush=True)
 
     except websockets.exceptions.ConnectionClosed:
         print("🔴 客户端已断开", flush=True)

@@ -28,7 +28,7 @@ export function systemPromptForDirection(direction: TranslationDirection): strin
 }
 
 export function directionLabel(direction: TranslationDirection): string {
-  return direction === 'zh-en' ? '中译英 (ZH → EN)' : '英译中 (EN → ZH)'
+  return direction === 'zh-en' ? '中译外 (ZH → 外)' : '外译中 (外 → ZH)'
 }
 
 /**
@@ -55,13 +55,19 @@ export function targetLangOfDirection(
   return direction === 'zh-en' ? 'en' : 'zh'
 }
 
-export function resolveTranslationRoute(sourceText: string, mainMode: TranslationDirection): {
+export function resolveTranslationRoute(
+  sourceText: string,
+  mainMode: TranslationDirection,
+  /** Trusted engine LID tag — only zh/en ever routes; abnormal tags never do */
+  langTag?: string
+): {
   detected: DetectedLanguage
   actualDirection: TranslationDirection
   reversed: boolean
   systemPrompt: string
 } {
-  const detected = detectLanguage(sourceText)
+  const detected =
+    langTag === 'zh' || langTag === 'en' ? langTag : detectLanguage(sourceText)
   const actualDirection = resolveActualDirection(mainMode, detected)
   return {
     detected,

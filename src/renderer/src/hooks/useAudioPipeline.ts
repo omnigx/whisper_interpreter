@@ -71,7 +71,9 @@ export function useAudioPipeline(): {
   const sttRef = useRef<SttClient | null>(null)
   const llmRef = useRef<LlmClient | null>(null)
   /** Serial translation jobs; aborted jobs can unshift back to the head */
-  const translateQueueRef = useRef<Array<{ unit: string; sourceId?: string }>>([])
+  const translateQueueRef = useRef<
+    Array<{ unit: string; sourceId?: string; langTag?: string }>
+  >([])
   const translatingRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   /** When true, AbortError re-queues the interrupted job (model switch) */
@@ -160,7 +162,7 @@ export function useAudioPipeline(): {
       const mainMode =
         useAppStore.getState().settings.translationDirection ?? 'en-zh'
       const { detected, actualDirection, reversed, systemPrompt } =
-        resolveTranslationRoute(job.unit, mainMode)
+        resolveTranslationRoute(job.unit, mainMode, job.langTag)
       const history = historyRef.current.slice(-8)
       const userContent = buildTranslateUserContent(job.unit, history, actualDirection)
 
@@ -397,11 +399,11 @@ export function useAudioPipeline(): {
 
   // Keep enqueueTranslate → drain linked after drain exists
   const runTranslate = useCallback(
-    (unit: string, sourceId?: string) => {
+    (unit: string, sourceId?: string, langTag?: string) => {
       if (!unit.trim()) return
       const st = useAppStore.getState().settings
       if (st.engine.activeLlmId === 'none' || !getActiveLlm(st)) return
-      translateQueueRef.current.push({ unit, sourceId })
+      translateQueueRef.current.push({ unit, sourceId, langTag })
       void drainTranslateQueue()
     },
     [drainTranslateQueue]
@@ -546,13 +548,21 @@ export function useAudioPipeline(): {
         setPartialText('')
         const text = result.text.trim()
         if (!text) return
-        const lang = detectLanguage(text)
+        // 语种：优先引擎自带 LID 标签；异常标签只标记不路由（语言对始终
+        // 由切换键主方向 + 字符启发式决定，标签错误不传染翻译方向）
+        const rawTag =
+          typeof result.lang === 'string' ? result.lang.trim().toLowerCase() : ''
+        const trustedTag = rawTag === 'zh' || rawTag === 'en' ? rawTag : null
+        const lowConf = rawTag !== '' && trustedTag === null
+        const lang = trustedTag ?? detectLanguage(text)
         upsertTranscript({
           id: result.utteranceId,
           text,
           isFinal: true,
           timestamp: Date.now(),
-          lang
+          lang,
+          ...(rawTag ? { langTag: rawTag } : {}),
+          ...(lowConf ? { lowConfidence: true } : {})
         })
         const sttModel =
           useAppStore.getState().settings.stt.model ||
@@ -566,10 +576,12 @@ export function useAudioPipeline(): {
           model_name: sttModel,
           content: text,
           ...(sttLatency != null ? { latency: sttLatency } : {}),
-          ...(sttSegDurRef.current != null ? { duration_ms: sttSegDurRef.current } : {})
+          ...(sttSegDurRef.current != null ? { duration_ms: sttSegDurRef.current } : {}),
+          ...(rawTag ? { lang_tag: rawTag } : {}),
+          ...(lowConf ? { low_confidence: true } : {})
         })
         sttFlushAtRef.current = 0
-        runTranslate(text, result.utteranceId)
+        runTranslate(text, result.utteranceId, trustedTag ?? undefined)
       }
       client.onSystem = (message) => {
         const tip = message.trim()
