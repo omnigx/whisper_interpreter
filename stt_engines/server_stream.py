@@ -57,6 +57,7 @@ async def handle_audio(websocket):
 
             # 2. 收到前端不断发来的音频切片
             if isinstance(message, bytes):
+              try:
                 audio_data = np.frombuffer(message, dtype=np.int16).astype(np.float32) / 32768.0
                 res = model.generate(input=audio_data, cache=cache, is_final=False, chunk_size=chunk_size)
                 
@@ -71,7 +72,11 @@ async def handle_audio(websocket):
                             "type": "partial",
                             "text": current_sentence 
                         }))
-                        
+              except websockets.exceptions.ConnectionClosed:
+                raise
+              except Exception as e:
+                print(f"❌ 单句处理失败（连接保持）: {e}", flush=True)
+
     except websockets.exceptions.ConnectionClosed:
         print("🔴 客户端已断开")
     except Exception as e:

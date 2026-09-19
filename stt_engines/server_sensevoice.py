@@ -1,4 +1,5 @@
 import asyncio
+import json
 import websockets
 import numpy as np
 import os
@@ -92,6 +93,7 @@ async def handle_audio(websocket):
                 continue
 
             if isinstance(message, bytes):
+              try:
                 audio_data = np.frombuffer(message, dtype=np.int16).astype(np.float32) / 32768.0
 
                 # 过短音频丢弃（<0.15s 基本是噪声/残留）。
@@ -114,6 +116,11 @@ async def handle_audio(websocket):
                             "lang": lang_tag
                         }))
                         print(f"✅ 识别结果[{lang_tag or '-'}]: {clean_result}", flush=True)
+              except websockets.exceptions.ConnectionClosed:
+                raise
+              except Exception as e:
+                # 单句失败只记录，连接保持——不再因一句异常弃掉整条连接
+                print(f"❌ 单句处理失败（连接保持）: {e}", flush=True)
 
     except websockets.exceptions.ConnectionClosed:
         print("🔴 客户端已断开", flush=True)

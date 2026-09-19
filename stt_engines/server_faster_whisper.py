@@ -96,6 +96,7 @@ async def handle_audio(websocket, *args):
             # 分支 2：处理二进制 PCM 音频流，执行转写与标点断句
             # -------------------------------------------------------------
             elif isinstance(message, bytes):
+              try:
                 if model is None:
                     continue
                 
@@ -142,7 +143,11 @@ async def handle_audio(websocket, *args):
                         "lang": getattr(info, "language", None)
                     }))
                     print(f"输出末尾转写: {buffer_text.strip()}")
-                    
+              except websockets.exceptions.ConnectionClosed:
+                raise
+              except Exception as e:
+                print(f"❌ 单句处理失败（连接保持）: {e}", flush=True)
+
     except websockets.exceptions.ConnectionClosed:
         print("客户端连接已断开")
     except Exception as e:
