@@ -232,7 +232,7 @@ export interface EngineSettings {
   fallbackStt: SttConfig
   /** Local LLM id when degrading — `none` = disable translation instead */
   fallbackLlmId: string
-  /** Optional model tag when fallback LLM is Ollama (e.g. qwen2.5:7b) */
+  /** Optional model tag when fallback LLM is Ollama (e.g. qwen3:4b-q4-tuned) */
   fallbackLlmModel?: string
   /** Auto-switch to fallback when cloud unreachable */
   autoDegrade: boolean
@@ -455,7 +455,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       tier: 'local',
       apiKey: 'ollama',
       baseUrl: 'http://127.0.0.1:11434/v1',
-      model: 'qwen2.5:7b',
+      model: 'qwen3:4b-q4-tuned',
       systemPrompt: DEFAULT_SYSTEM_PROMPT
     },
     {
@@ -479,7 +479,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       language: ''
     },
     fallbackLlmId: 'ollama-qwen',
-    fallbackLlmModel: 'qwen2.5:7b',
+    fallbackLlmModel: 'qwen3:4b-q4-tuned',
     autoDegrade: true
   },
   subtitleSplitRatio: 0.45,

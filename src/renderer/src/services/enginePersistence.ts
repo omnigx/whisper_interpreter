@@ -99,7 +99,7 @@ export function restoreEngineConfig(): boolean {
   return true
 }
 
-/** Hard reset to factory defaults (SenseVoice + Ollama qwen2.5:7b). */
+/** Hard reset to factory defaults (SenseVoice + Ollama qwen3:4b-q4-tuned). */
 export function resetEngineToDefaults(): void {
   const d = DEFAULT_SETTINGS
   useAppStore.setState((s) => ({
@@ -109,7 +109,7 @@ export function resetEngineToDefaults(): void {
       engine: structuredClone(d.engine),
       llms: stripSecrets(structuredClone(d.llms)).map((l) => {
         if (l.id === 'ollama-qwen') {
-          return { ...l, model: 'qwen2.5:7b', apiKey: 'ollama' }
+          return { ...l, model: 'qwen3:4b-q4-tuned', apiKey: 'ollama' }
         }
         return l
       }),

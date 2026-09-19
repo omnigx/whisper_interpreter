@@ -208,7 +208,7 @@ export function ollamaApiRoot(baseUrl = 'http://127.0.0.1:11434/v1'): string {
 }
 
 /** Legacy fallback list when the live Ollama inventory is unavailable. */
-export const OLLAMA_FALLBACK_MODELS = ['qwen2.5:7b', 'qwen2.5:14b']
+export const OLLAMA_FALLBACK_MODELS = ['qwen3:4b-q4-tuned', 'qwen2.5:7b', 'qwen2.5:14b']
 
 /**
  * List locally installed Ollama models via GET /api/tags.
@@ -231,13 +231,14 @@ export async function fetchOllamaModels(
   return [...new Set(names)]
 }
 
-/** Prefer a 7b tag when choosing an initial model from a list. */
+/** Prefer the production tuned tag, then any 7b, when picking initial model. */
 export function pickPreferredOllamaModel(
   names: string[],
   current?: string
 ): string | undefined {
   if (current && names.includes(current)) return current
-  return names.find((n) => /7b/i.test(n)) ?? names[0]
+  if (names.includes('qwen3:4b-q4-tuned')) return 'qwen3:4b-q4-tuned'
+  return names.find((n) => /qwen3:4b-tuned/i.test(n)) ?? names.find((n) => /7b/i.test(n)) ?? names[0]
 }
 
 function normalizeBaseUrl(url: string): string {
