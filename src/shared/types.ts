@@ -450,7 +450,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     },
     {
       id: 'ollama-qwen',
-      label: 'Ollama · Qwen2.5',
+      label: 'Ollama · 本地',
       provider: 'ollama',
       tier: 'local',
       apiKey: 'ollama',

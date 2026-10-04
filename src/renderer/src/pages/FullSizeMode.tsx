@@ -52,6 +52,7 @@ export function FullSizeMode({
   const partialText = useAppStore((s) => s.partialText)
   const translations = useAppStore((s) => s.translations)
   const isListening = useAppStore((s) => s.isListening)
+  const micSilent = useAppStore((s) => s.micSilent)
   const sttLinkStatus = useAppStore((s) => s.sttLinkStatus)
   const pipelineStatus = useAppStore((s) => s.pipelineStatus)
   const seedDemoContent = useAppStore((s) => s.seedDemoContent)
@@ -196,11 +197,35 @@ export function FullSizeMode({
             </h1>
             <p className="truncate text-[10px] text-[var(--text-muted)]">{pipelineStatus}</p>
           </div>
+          {/* 红绿灯：绿=运行正常 · 琥珀=引擎正常但麦克风静音 · 红=STT 链路断开 */}
           <span
             className={`inline-flex h-2 w-2 shrink-0 rounded-full ${
-              isListening ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-slate-500'
+              !isListening
+                ? 'bg-slate-500'
+                : sttLinkStatus !== 'connected'
+                  ? 'bg-red-400 shadow-[0_0_8px_#f87171]'
+                  : micSilent
+                    ? 'bg-amber-400 shadow-[0_0_8px_#fbbf24]'
+                    : 'bg-emerald-400 shadow-[0_0_8px_#34d399]'
             }`}
+            title={
+              !isListening
+                ? '待机'
+                : sttLinkStatus !== 'connected'
+                  ? 'STT 连接断开，正在自动重连'
+                  : micSilent
+                    ? '引擎正常，但检测到持续静音输入（音频流正常而电平为零）——请检查系统麦克风静音（Fn 键）或 Windows 麦克风隐私设置'
+                    : '听写中 · 输入电平正常'
+            }
           />
+          {isListening && micSilent ? (
+            <span
+              className="shrink-0 rounded border border-amber-400/40 bg-amber-500/15 px-1.5 py-px text-[10px] font-medium text-amber-300"
+              title="音频流正常但持续 10 秒零电平——常见原因：误触 Fn 麦克风静音键、Windows 麦克风隐私开关、输入设备选择错误"
+            >
+              输入静音
+            </span>
+          ) : null}
         </div>
 
         <div className="no-drag flex h-8 shrink-0 items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' }}>

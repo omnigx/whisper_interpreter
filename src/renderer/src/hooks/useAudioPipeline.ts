@@ -88,6 +88,8 @@ export function useAudioPipeline(): {
   const drainGenRef = useRef(0)
   /** Debug stats cadence (500ms) — meters themselves go through meterBus, not the store */
   const lastStatsPushRef = useRef(0)
+  /** performance.now() of the last above-threshold audio frame */
+  const lastLoudAtRef = useRef(0)
   /** STT instrumentation: when the utterance was flushed + its audio length */
   const sttFlushAtRef = useRef(0)
   const sttSegDurRef = useRef<number | undefined>(undefined)
@@ -192,7 +194,7 @@ export function useAudioPipeline(): {
         ? `Auto-LID 反向 · ${directionLabel(actualDirection)}`
         : directionLabel(actualDirection)
       setPipelineStatus(
-        `翻译中 · ${routeHint} · LID=${detected} → ${llm.label} · ${llmCfg.model}`
+        `翻译中 · ${routeHint} · LID=${detected} → ${llmCfg.model || llm.label}`
       )
 
       let assembled = ''
@@ -294,7 +296,7 @@ export function useAudioPipeline(): {
         })
         historyRef.current = [...historyRef.current, job.unit].slice(-20)
         setPipelineStatus(
-          `翻译完成 · ${reversed ? '反向 ' : ''}${directionLabel(actualDirection)} · ${llm.label}`
+          `翻译完成 · ${reversed ? '反向 ' : ''}${directionLabel(actualDirection)} · ${llmCfg.model || llm.label}`
         )
       } catch (e) {
         if ((e as Error)?.name === 'AbortError') {
@@ -699,6 +701,14 @@ export function useAudioPipeline(): {
           // Hot path: meters paint via direct DOM writes from meterBus —
           // no React state, no quantization, full 50ms cadence.
           publishMeter({ inputLevel: snap.inputLevel, pcmRms: snap.pcmRms })
+          // Digital-silence watch: frames flow but RMS ~0 for 10s straight
+          // → system mic muted (Fn key) / dead input. Store write on flip only.
+          if (snap.pcmRms > 0.002) lastLoudAtRef.current = performance.now()
+          const silentTooLong =
+            performance.now() - lastLoudAtRef.current > 10_000 && snap.framesEmitted > 100
+          if (silentTooLong !== useAppStore.getState().micSilent) {
+            useAppStore.getState().setMicSilent(silentTooLong)
+          }
           // Cold path: store keeps a 500ms debug snapshot (panel text + future consumers)
           const now = performance.now()
           if (now - lastStatsPushRef.current >= 500) {

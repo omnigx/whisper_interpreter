@@ -48,11 +48,14 @@ interface AppState {
   degraded: boolean
   /** Single-window morph: full | subtitle (renderer view) */
   windowMode: WindowMode
+  /** Frames flow but RMS stays ~0 — system mic muted (Fn key) or dead input */
+  micSilent: boolean
   /** Live Ollama model inventory (fetched once at startup + on panel open) */
   ollamaModels: string[]
 
   setDisplay: (partial: Partial<DisplaySettings>) => void
   setOllamaModels: (models: string[]) => void
+  setMicSilent: (silent: boolean) => void
   setAudio: (partial: Partial<AudioSettings>) => void
   setStt: (partial: Partial<SttConfig>) => void
   setEngine: (partial: Partial<EngineSettings>) => void
@@ -109,6 +112,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   degraded: false,
   windowMode: 'full',
   ollamaModels: [],
+  micSilent: false,
 
   setDisplay: (partial) =>
     set((s) => ({
@@ -119,6 +123,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       ollamaModels: Array.isArray(models) && models.length > 0 ? models : s.ollamaModels
     })),
+
+  setMicSilent: (silent) =>
+    set((s) => (s.micSilent === silent ? s : { micSilent: silent })),
 
   setAudio: (partial) =>
     set((s) => ({
