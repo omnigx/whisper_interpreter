@@ -486,7 +486,25 @@ export function registerSessionIoIpc(): void {
       ...(typeof e.wrong_lang === 'boolean' ? { wrong_lang: e.wrong_lang } : {}),
       ...(typeof e.lang_tag === 'string' && e.lang_tag ? { lang_tag: e.lang_tag } : {}),
       ...(typeof e.low_confidence === 'boolean' ? { low_confidence: e.low_confidence } : {}),
-      ...(typeof e.reason === 'string' && e.reason ? { reason: e.reason } : {})
+      ...(typeof e.reason === 'string' && e.reason ? { reason: e.reason } : {}),
+      ...(typeof e.vad_silence_ms === 'number' && Number.isFinite(e.vad_silence_ms)
+        ? { vad_silence_ms: e.vad_silence_ms }
+        : {}),
+      ...(typeof e.max_sentence_ms === 'number' && Number.isFinite(e.max_sentence_ms)
+        ? { max_sentence_ms: e.max_sentence_ms }
+        : {}),
+      ...(typeof e.input_device === 'string' && e.input_device
+        ? { input_device: e.input_device }
+        : {}),
+      ...(typeof e.sample_rate_hz === 'number' && Number.isFinite(e.sample_rate_hz)
+        ? { sample_rate_hz: e.sample_rate_hz }
+        : {}),
+      ...(typeof e.recording_file === 'string' && e.recording_file
+        ? { recording_file: e.recording_file }
+        : {}),
+      ...(typeof e.duration_ms === 'number' && Number.isFinite(e.duration_ms)
+        ? { duration_ms: e.duration_ms }
+        : {})
     })
   })
 
