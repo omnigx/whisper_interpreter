@@ -32,3 +32,6 @@ __pycache__/
 
 # 研究笔记（不入库）
 experiment/
+
+# 工具本地配置（不入库）
+.zcodeignore
