@@ -100,9 +100,11 @@ export async function createSileroVadAsync(
   let maxMs = clamp(options.maxSentenceMs ?? 15000, 5000, 30000)
   let onSegment = options.onSegment
   const positive = options.positiveSpeechThreshold ?? 0.5
+  // 双阈值滞回（标准 Silero 语义）：< negative 才累计静音；[negative, positive)
+  // 之间保持——词间小停顿与语中概率回落不再被计入断句静音
+  const negative = options.negativeSpeechThreshold ?? 0.35
   let redemptionMs = options.redemptionMs ?? 300
   const minSpeechMs = options.minSpeechMs ?? 250
-  void options.negativeSpeechThreshold
 
   try {
     const modelUrl = `${window.location.origin}/vad/silero_vad_v5.onnx`
@@ -236,9 +238,7 @@ export async function createSileroVadAsync(
 
           if (speaking) {
             speechFrames.push(frame)
-            // Count silence whenever below positive threshold (not only < negative),
-            // otherwise mid-prob noise never settles and final never arrives.
-            if (prob < positive) {
+            if (prob < negative) {
               silenceMs += frameMs
               if (silenceMs >= redemptionMs) {
                 if (speechMs >= minSpeechMs) emit('silence')
@@ -250,9 +250,9 @@ export async function createSileroVadAsync(
                   clearMaxTimer()
                 }
               }
-            } else {
-              silenceMs = 0
             }
+            // mid-band [negative, positive): hold — 静音既不累计也不清零；
+            // 15s maxTimer 兜底真正的无限拖尾
           }
         })
         .catch((err) => {
