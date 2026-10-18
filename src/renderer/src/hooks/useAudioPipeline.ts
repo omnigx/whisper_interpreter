@@ -513,6 +513,20 @@ export function useAudioPipeline(): {
               : `能量 VAD 回退 · 连接 ${sttLabel}…`
           )
         },
+        onStall: (info) => {
+          // 看门狗自愈事件落盘：recentProbs 全部偏低 → 麦克风阈值问题；
+          // 数值冻结/高低混杂 → ORT 推理悬挂（AMD iGPU 机型首段后易发）
+          setPipelineStatus(`VAD 疑似卡顿，已自动重建（第 ${info.recoveries} 次）`)
+          logSessionEvent({
+            module: 'VAD',
+            model_name: 'silero',
+            content: `inference stall ${Math.round(info.stallMs)}ms, session recreated #${info.recoveries}`,
+            reason: 'vad_stall',
+            source_text: `lastProb=${info.lastProb.toFixed(3)} ring=[${info.recentProbs
+              .map((p) => p.toFixed(2))
+              .join(',')}]`
+          })
+        },
         onSegment: (seg) => {
           bumpVadSegment()
           const dur = Math.max(0, Math.round(seg.endMs - seg.startMs))

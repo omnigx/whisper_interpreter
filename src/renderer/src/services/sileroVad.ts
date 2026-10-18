@@ -16,6 +16,8 @@ export interface SileroVadOptions {
   onSegment?: (seg: VadSegment) => void
   onSpeechProb?: (p: number) => void
   onEngine?: (engine: VadEngine) => void
+  /** Watchdog fired when inference stalls — session is recreated automatically */
+  onStall?: (info: { stallMs: number; lastProb: number; recentProbs: number[]; recoveries: number }) => void
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -103,9 +105,8 @@ export async function createSileroVadAsync(
   void options.negativeSpeechThreshold
 
   try {
-    const model = await SileroV5Session.create(
-      `${window.location.origin}/vad/silero_vad_v5.onnx`
-    )
+    const modelUrl = `${window.location.origin}/vad/silero_vad_v5.onnx`
+    let model = await SileroV5Session.create(modelUrl)
 
     const residual = new Float32Array(FRAME_SAMPLES * 4)
     let residualLen = 0
@@ -117,6 +118,49 @@ export async function createSileroVadAsync(
     let queue: Promise<void> = Promise.resolve()
     let maxTimer: ReturnType<typeof setTimeout> | null = null
     let frameErrorLogged = false
+
+    // ---- Stall watchdog ----
+    // An ORT inference that never resolves (seen on AMD iGPU machines after
+    // the first segment) freezes the whole promise chain: later frames pile
+    // up, no segment ever fires, and .catch can't help (pending is not
+    // rejected). Detector: frames keep arriving but no prob computed for 3s
+    // -> recreate the session and rebuild the chain. The recent-prob ring is
+    // reported so logs can tell frozen inference from below-threshold mics.
+    let lastProbAt = performance.now()
+    let lastProb = -1
+    const recentProbs: number[] = []
+    let recoveries = 0
+    let recovering = false
+    const PROB_RING = 10
+    const STALL_MS = 3000
+
+    const recoverFromStall = (): void => {
+      if (recovering) return
+      recovering = true
+      recoveries += 1
+      const stallMs = performance.now() - lastProbAt
+      console.error(
+        `[VAD] inference stalled ${Math.round(stallMs)}ms (lastProb=${lastProb.toFixed(3)}, ` +
+          `ring=[${recentProbs.map((p) => p.toFixed(2)).join(',')}]) — recreating session #${recoveries}`
+      )
+      options.onStall?.({ stallMs, lastProb, recentProbs: [...recentProbs], recoveries })
+      queue = Promise.resolve()
+      clearMaxTimer()
+      speechFrames.length = 0
+      speaking = false
+      silenceMs = 0
+      speechMs = 0
+      void SileroV5Session.create(modelUrl)
+        .then((fresh) => {
+          void model.release().catch(() => undefined)
+          model = fresh
+          lastProbAt = performance.now()
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          recovering = false
+        })
+    }
 
     const clearMaxTimer = (): void => {
       if (maxTimer != null) {
@@ -168,6 +212,10 @@ export async function createSileroVadAsync(
       queue = queue
         .then(async () => {
           const prob = await model.process(frame)
+          lastProbAt = performance.now()
+          lastProb = prob
+          recentProbs.push(prob)
+          if (recentProbs.length > PROB_RING) recentProbs.shift()
           options.onSpeechProb?.(prob)
           const frameMs = (FRAME_SAMPLES / SAMPLE_RATE) * 1000
 
@@ -223,6 +271,7 @@ export async function createSileroVadAsync(
     return {
       engine: 'silero',
       pushPcm(packet: PcmPacket) {
+        if (performance.now() - lastProbAt > STALL_MS) recoverFromStall()
         const f32 = int16ToFloat32(packet.samples)
         let offset = 0
         while (offset < f32.length) {
