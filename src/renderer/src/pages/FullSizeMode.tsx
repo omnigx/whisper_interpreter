@@ -53,6 +53,7 @@ export function FullSizeMode({
   const translations = useAppStore((s) => s.translations)
   const isListening = useAppStore((s) => s.isListening)
   const micSilent = useAppStore((s) => s.micSilent)
+  const debugMode = useAppStore((s) => s.debugMode === true)
   const sttLinkStatus = useAppStore((s) => s.sttLinkStatus)
   const pipelineStatus = useAppStore((s) => s.pipelineStatus)
   const seedDemoContent = useAppStore((s) => s.seedDemoContent)
@@ -177,6 +178,31 @@ export function FullSizeMode({
   useEffect(() => {
     targetRef.current?.scrollTo({ top: targetRef.current.scrollHeight, behavior: 'smooth' })
   }, [translations])
+
+  /** Debug 模式下句段编号（从 1 起，过滤 system 类型） */
+  const transcriptSeq = new Map<string, number>()
+  let seq = 1
+  for (const t of transcripts) {
+    if (t.text.trim()) {
+      transcriptSeq.set(t.id, seq)
+      seq += 1
+    }
+  }
+  const translationSeq = new Map<string, number>()
+  seq = 1
+  for (const t of translations) {
+    if (t.type !== 'system' && t.text.trim()) {
+      translationSeq.set(t.id, seq)
+      seq += 1
+    }
+  }
+
+  /** HH:mm:ss from epoch ms */
+  const fmtTs = (ms: number): string => {
+    const d = new Date(ms)
+    const p = (n: number): string => String(n).padStart(2, '0')
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  }
 
   const toggleListen = (): void => {
     if (isListening) stopListening()
@@ -380,7 +406,15 @@ export function FullSizeMode({
             ) : (
               <>
                 {transcripts.map((t) => (
-                  <div key={t.id} className="text-[var(--text)]" style={itemGapStyle}>
+                  <div key={t.id} className="group text-[var(--text)]" style={itemGapStyle}>
+                    {debugMode && (
+                      <span
+                        className="mr-1.5 hidden select-none font-mono text-[9px] leading-none text-[var(--text-muted)]/40 group-hover:inline"
+                        title={`序号 ${transcriptSeq.get(t.id) ?? '?'} · ${fmtTs(t.timestamp)}`}
+                      >
+                        [{transcriptSeq.get(t.id) ?? '?'}·{fmtTs(t.timestamp)}]
+                      </span>
+                    )}
                     <LanguageTag lang={t.lang ?? detectLanguage(t.text)} />
                     {t.lowConfidence ? (
                       <span
@@ -489,11 +523,17 @@ export function FullSizeMode({
                   ) : (
                     <div
                       key={t.id}
-                      className={
-                        t.streaming ? 'text-[var(--target)]/80' : 'text-[var(--target)]'
-                      }
+                      className={`group ${t.streaming ? 'text-[var(--target)]/80' : 'text-[var(--target)]'}`}
                       style={itemGapStyle}
                     >
+                      {debugMode && (
+                        <span
+                          className="mr-1.5 hidden select-none font-mono text-[9px] leading-none text-[var(--text-muted)]/40 group-hover:inline"
+                          title={`序号 ${translationSeq.get(t.id) ?? '?'} · ${fmtTs(t.timestamp)}`}
+                        >
+                          [{translationSeq.get(t.id) ?? '?'}·{fmtTs(t.timestamp)}]
+                        </span>
+                      )}
                       <LanguageTag lang={t.lang} />
                       <span
                         className="text-content whitespace-pre-wrap break-words"
