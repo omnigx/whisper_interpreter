@@ -50,12 +50,15 @@ interface AppState {
   windowMode: WindowMode
   /** Frames flow but RMS stays ~0 — system mic muted (Fn key) or dead input */
   micSilent: boolean
+  /** Local STT engine spawn in progress (spawned, model loading) */
+  sttEngineLaunching: boolean
   /** Live Ollama model inventory (fetched once at startup + on panel open) */
   ollamaModels: string[]
 
   setDisplay: (partial: Partial<DisplaySettings>) => void
   setOllamaModels: (models: string[]) => void
   setMicSilent: (silent: boolean) => void
+  setSttEngineLaunching: (v: boolean) => void
   setAudio: (partial: Partial<AudioSettings>) => void
   setStt: (partial: Partial<SttConfig>) => void
   setEngine: (partial: Partial<EngineSettings>) => void
@@ -113,6 +116,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   windowMode: 'full',
   ollamaModels: [],
   micSilent: false,
+  sttEngineLaunching: false,
 
   setDisplay: (partial) =>
     set((s) => ({
@@ -126,6 +130,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setMicSilent: (silent) =>
     set((s) => (s.micSilent === silent ? s : { micSilent: silent })),
+
+  setSttEngineLaunching: (v) =>
+    set((s) => (s.sttEngineLaunching === v ? s : { sttEngineLaunching: v })),
 
   setAudio: (partial) =>
     set((s) => ({

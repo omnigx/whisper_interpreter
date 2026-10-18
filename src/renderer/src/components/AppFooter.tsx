@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import {
   derivePipelineMode,
   getActiveLlm,
+  localSttLauncherKey,
   pipelineModeLabel
 } from '@shared/types'
 import { useAppStore } from '../stores/appStore'
@@ -36,6 +38,53 @@ export function AppFooter({
         : 'bg-emerald-400'
 
   const engineDot = degraded || mode === 'offline' ? 'bg-orange-400' : 'bg-emerald-400'
+
+  const sttEngineLaunching = useAppStore((s) => s.sttEngineLaunching)
+  const sttLinkStatus = useAppStore((s) => s.sttLinkStatus)
+  const isListeningF = isListening
+
+  // 本地 STT 引擎端口探测（3s 一拍，仅本地引擎；云 STT 走连接态）
+  const launcherKey = localSttLauncherKey(settings.stt.provider)
+  const [enginePortUp, setEnginePortUp] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!launcherKey) {
+      setEnginePortUp(null)
+      return
+    }
+    let alive = true
+    const probe = (): void => {
+      void window.whisperApi
+        ?.getSttEngineStatus?.(launcherKey)
+        .then((r) => {
+          if (alive) setEnginePortUp(Boolean(r?.running))
+        })
+        .catch(() => undefined)
+    }
+    probe()
+    const timer = window.setInterval(probe, 3000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [launcherKey])
+
+  // STT 就绪灯：灰=未启动 · 琥珀=拉起中/连接中 · 绿=就绪（云=已连接）
+  const isCloudStt = !launcherKey
+  const sttReady = isCloudStt ? sttLinkStatus === 'connected' : enginePortUp === true
+  const sttStarting = sttEngineLaunching || (isListeningF && sttLinkStatus !== 'connected' && !sttReady)
+  const sttDot = sttReady
+    ? 'bg-emerald-400'
+    : sttStarting
+      ? 'bg-amber-400'
+      : 'bg-slate-500'
+  const sttLabel = sttReady ? 'STT就绪' : sttStarting ? 'STT启动中' : 'STT未启动'
+
+  // LLM 就绪灯：N/A 隐藏 · 绿=活动端点可达 · 琥珀=不可达/未知
+  const llmReachable =
+    activeLlm?.provider === 'ollama'
+      ? localLlmReachable !== false
+      : cloudReachable !== false
+  const llmDot = llmReachable ? 'bg-emerald-400' : 'bg-amber-400'
 
   const recordingUiStatus = useAppStore((s) => s.recordingUiStatus)
   const recordingDot =
@@ -83,10 +132,33 @@ export function AppFooter({
         {recordingLabel}
       </span>
 
-      <span className="hidden text-[var(--text-muted)]/60 sm:inline">
-        云{cloudReachable == null ? '—' : cloudReachable ? '✓' : '✗'} · 本地
-        {localLlmReachable == null ? '—' : localLlmReachable ? '✓' : '✗'}
+      <span
+        className="inline-flex items-center gap-1.5"
+        title={
+          sttReady
+            ? 'STT 引擎就绪（端口在服务）'
+            : sttStarting
+              ? 'STT 引擎拉起中，模型加载需 5–60 秒'
+              : 'STT 引擎未启动（开始听写时自动拉起）'
+        }
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${sttDot}`} />
+        {sttLabel}
       </span>
+
+      {activeLlm && (
+        <span
+          className="inline-flex items-center gap-1.5"
+          title={
+            llmReachable
+              ? `LLM 就绪 · ${activeLlm.model}`
+              : 'LLM 端点不可达——请确认 Ollama/网络已启动'
+          }
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${llmDot}`} />
+          LLM就绪
+        </span>
+      )}
 
       <div className="ml-auto flex items-center gap-1.5">
         {(network === 'offline' || cloudReachable === false) && !degraded && modeOnline && (

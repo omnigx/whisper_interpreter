@@ -95,6 +95,7 @@ export function HeaderEngineSettings(): React.JSX.Element {
     if (!launcherKey || engineBusy) return
     setEngineBusy(true)
     setEngineError(null)
+    useAppStore.getState().setSttEngineLaunching(true)
     try {
       const r = await window.whisperApi?.ensureSttEngine?.(launcherKey, 60000)
       if (r && !r.ok) {
@@ -103,6 +104,7 @@ export function HeaderEngineSettings(): React.JSX.Element {
     } catch (e) {
       setEngineError(e instanceof Error ? e.message : String(e))
     } finally {
+      useAppStore.getState().setSttEngineLaunching(false)
       setEngineBusy(false)
     }
   }

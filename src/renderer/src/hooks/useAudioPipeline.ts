@@ -669,6 +669,7 @@ export function useAudioPipeline(): {
       if (engineKey) {
         setPipelineStatus(`正在连接 ${sttLabel} · 确认本地引擎…`)
         try {
+          useAppStore.getState().setSttEngineLaunching(true)
           const ensured = await window.whisperApi?.ensureSttEngine?.(engineKey, 60000)
           if (ensured && !ensured.ok) {
             setPipelineStatus(
@@ -679,10 +680,13 @@ export function useAudioPipeline(): {
           void window.whisperApi?.stopOtherSttEngines?.(engineKey)
         } catch {
           /* launcher unavailable — fall through to plain connect */
+        } finally {
+          useAppStore.getState().setSttEngineLaunching(false)
         }
       }
 
       await client.connect()
+      useAppStore.getState().setSttEngineLaunching(false)
       setSttLinkStatus('connected')
       if (client.mode === 'stream') {
         client.configure?.({
