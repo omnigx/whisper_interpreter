@@ -119,7 +119,7 @@ export async function createSileroVadAsync(
     // mid-stream watchdog (8s+) to startup (~2s worst case per attempt).
     // 悬挂是时间性的（wasm 加载后头几秒必挂，之后自愈）——快速连续重建
     // 无效；改为间隔重试，把恢复完整地留在启动窗口内，看门狗不再上场
-    for (let attempt = 1; attempt <= 8; attempt++) {
+    for (let attempt = 1; attempt <= 10; attempt++) {
       try {
         await Promise.race([
           model.process(new Float32Array(FRAME_SAMPLES)),
@@ -131,10 +131,15 @@ export async function createSileroVadAsync(
         if (attempt > 1) console.warn(`[VAD] 预热第 ${attempt} 次尝试后成功`)
         break
       } catch {
-        console.warn(`[VAD] 首次推理悬挂（${attempt}/8，${attempt * 3}s），稍候重试`)
+        // 同会话重试（悬挂是时间性的，会话本身没坏）；仅每 3 次失败才重建
+        // ——重建 = 主线程 ONNX 编译数秒，是 UI 卡顿风暴的来源
+        console.warn(`[VAD] 首次推理悬挂（${attempt}/10），1.5s 后重试`)
         await new Promise((r) => setTimeout(r, 1500))
-        void model.release().catch(() => undefined)
-        model = await SileroV5Session.create(modelUrl)
+        model.reset()
+        if (attempt % 3 === 0) {
+          void model.release().catch(() => undefined)
+          model = await SileroV5Session.create(modelUrl)
+        }
       }
     }
 

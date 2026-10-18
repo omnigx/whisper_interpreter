@@ -5,7 +5,8 @@ import {
   type AudioCaptureHandle,
   type AudioLevelSnapshot
 } from '../services/audioCapture'
-import type { VadEngine } from '../services/pipeline'
+import type {
+  PcmPacket, VadEngine } from '../services/pipeline'
 import { createSttClient, type SttClient } from '../services/stt'
 import { createLlmClient, type LlmClient } from '../services/llm'
 import type { SileroVadHandle } from '../services/pipeline'
@@ -508,7 +509,11 @@ export function useAudioPipeline(): {
 
     try {
       const { createSileroVadAsync } = await import('../services/sileroVad')
-      const vad = await createSileroVadAsync({
+      // 预热可能重试十余秒——不阻塞采集：VAD 就绪前先缓存 PCM 帧，
+      // 就绪后回灌，开始听写后头几句不再丢失
+      const preVadPackets: PcmPacket[] = []
+      let vadAttached = false
+      const vadPromise = createSileroVadAsync({
         maxSentenceMs: vadMaxMs,
         redemptionMs: vadSilenceMs,
         onEngine: (engine) => {
@@ -561,7 +566,6 @@ export function useAudioPipeline(): {
           sttRef.current?.notifyUtteranceEnd?.()
         }
       })
-      vadRef.current = vad
 
       const client = createSttClient(sttConfig)
       client.onResult = (result) => {
@@ -762,7 +766,8 @@ export function useAudioPipeline(): {
         deviceId: audio.deviceId || undefined,
         sourceMode: audio.inputSource ?? 'mic',
         onPcm: (packet) => {
-          vadRef.current?.pushPcm(packet)
+          if (vadAttached) vadRef.current?.pushPcm(packet)
+          else if (preVadPackets.length < 800) preVadPackets.push(packet)
           sttRef.current?.sendPcm(packet)
           appendSyncRecordingPcm(packet.samples)
         },
@@ -796,6 +801,13 @@ export function useAudioPipeline(): {
           setListening(false)
         }
       })
+
+      // VAD 就绪（预热可能在后台仍在重试）：接管实时帧并回灌缓冲的头几句
+      const vad = await vadPromise
+      vadRef.current = vad
+      vadAttached = true
+      for (const p of preVadPackets) vad.pushPcm(p)
+      preVadPackets.length = 0
 
       setListening(true)
       startingRef.current = false
