@@ -439,32 +439,6 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
             <span className="inline-flex h-8 w-[3.25rem]" aria-hidden />
           )}
 
-          {/* Debug 模式：录音/日志落 *_debug 子文件夹（底栏琥珀灯同步） */}
-          <button
-            type="button"
-            aria-pressed={debugMode}
-            title={debugMode ? 'Debug 模式开启中：新录音存 recordings_debug，新日志存 logs_debug' : '开启 Debug 模式（区分常规会议与调试素材）'}
-            onClick={() => {
-              void window.whisperApi
-                ?.setDebugMode?.(!debugMode)
-                .then((v) => {
-                  setDebugModeState(v)
-                  useAppStore.getState().setDebugModeMirror(v)
-                  void refreshLogs()
-                  void refreshRecordings()
-                })
-                .catch(() => undefined)
-            }}
-            className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-xs transition ${
-              debugMode
-                ? 'border-amber-400/60 bg-amber-500/15 text-amber-300'
-                : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:border-amber-400/50 hover:text-[var(--text)]'
-            }`}
-          >
-            <span className={`h-1.5 w-1.5 rounded-full ${debugMode ? 'bg-amber-400' : 'bg-slate-500'}`} />
-            debug
-          </button>
-
           {/* 占位：演示 / 清空 */}
           <button
             type="button"
@@ -492,6 +466,33 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
             className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
             aria-hidden
           />
+
+          {/* Debug 模式：录音/日志落 *_debug 子文件夹（底栏琥珀灯同步）。
+              放在全部占位之后——不挤占「返回」与主界面「测试」按钮的对位 */}
+          <button
+            type="button"
+            aria-pressed={debugMode}
+            title={debugMode ? 'Debug 模式开启中：新录音存 recordings_debug，新日志存 logs_debug' : '开启 Debug 模式（区分常规会议与调试素材）'}
+            onClick={() => {
+              void window.whisperApi
+                ?.setDebugMode?.(!debugMode)
+                .then((v) => {
+                  setDebugModeState(v)
+                  useAppStore.getState().setDebugModeMirror(v)
+                  void refreshLogs()
+                  void refreshRecordings()
+                })
+                .catch(() => undefined)
+            }}
+            className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-xs transition ${
+              debugMode
+                ? 'border-amber-400/60 bg-amber-500/15 text-amber-300'
+                : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:border-amber-400/50 hover:text-[var(--text)]'
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${debugMode ? 'bg-amber-400' : 'bg-slate-500'}`} />
+            debug
+          </button>
           <span
             className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
             aria-hidden
