@@ -107,7 +107,7 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
   const translateChainRef = useRef<Promise<void>>(Promise.resolve())
 
   const [logFiles, setLogFiles] = useState<LogFileInfo[]>([])
-  const [debugMode, setDebugModeState] = useState(false)
+  const [debugMode, setDebugModeState] = useState(() => useAppStore.getState().debugMode === true)
   const [selectedLog, setSelectedLog] = useState<string | null>(null)
   const [logPreview, setLogPreview] = useState('')
 
