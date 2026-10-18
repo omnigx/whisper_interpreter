@@ -2,6 +2,7 @@ import { app, ipcMain } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import net from 'node:net'
 import os from 'node:os'
+import { detectRuntimeProfile, runtimeProfileSummary } from './runtimeProfile'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -208,6 +209,7 @@ async function ensureEngine(
     }
 
     const engineRoot = resolveEngineRoot()
+    const { profile, gpuName } = await detectRuntimeProfile()
     const scriptPath = path.join(engineRoot, spec.script)
     if (!fs.existsSync(scriptPath)) {
       return { ok: false, error: `未找到引擎脚本 ${scriptPath}` }
@@ -224,6 +226,7 @@ async function ensureEngine(
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
+        ...profile.env,
         PYTHONUNBUFFERED: '1',
         // Piped stdout defaults to the ANSI codepage (GBK) on Windows —
         // emoji prints in the engine scripts would crash the child.
@@ -310,6 +313,12 @@ export function registerSttLauncher(): void {
         typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : 60000
       )
   )
+
+  /** Active hardware profile (cpu / igpu / npu) for UI display. */
+  ipcMain.handle('runtime-profile:get', async () => {
+    const { profile: p, gpuName: g } = await detectRuntimeProfile()
+    return { id: p.id, label: p.label, notes: p.notes, summary: runtimeProfileSummary(p.id, g) }
+  })
 
   /** Port probe only — never spawns. Mirrors what auto-launch would reuse. */
   ipcMain.handle('stt-launcher:status', (_event, engineKey: unknown) => {

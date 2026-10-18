@@ -51,10 +51,24 @@ export function HeaderEngineSettings(): React.JSX.Element {
   // Local engine process control (spawned engines only; cloud STT hides this)
   const launcherKey = localSttLauncherKey(settings.stt.provider)
   const [engineRunning, setEngineRunning] = useState<boolean | null>(null)
+  const [runtimeProfile, setRuntimeProfile] = useState<{
+    id: string
+    label: string
+    summary: string
+    notes: string
+  } | null>(null)
   const [engineBusy, setEngineBusy] = useState(false)
   const [engineError, setEngineError] = useState<string | null>(null)
 
   useClickOutside(rootRef, open, () => setOpen(false))
+
+  useEffect(() => {
+    if (!open) return
+    void window.whisperApi
+      ?.getRuntimeProfile?.()
+      .then((p) => setRuntimeProfile(p ?? null))
+      .catch(() => undefined)
+  }, [open])
 
   useEffect(() => {
     if (!open || !launcherKey) return
@@ -248,7 +262,9 @@ export function HeaderEngineSettings(): React.JSX.Element {
             {launcherKey && (
               <div className="flex flex-col gap-1.5 rounded border border-[var(--border)] px-2.5 py-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-[var(--text-muted)]">引擎进程</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    引擎进程{runtimeProfile ? ` · ${runtimeProfile.summary}` : ''}
+                  </span>
                   <span
                     className={`inline-flex items-center gap-1 text-[10px] ${
                       engineRunning ? 'text-emerald-400' : 'text-[var(--text-muted)]'

@@ -121,6 +121,14 @@ const api = {
   stopOtherSttEngines: (keep: string): Promise<void> =>
     ipcRenderer.invoke('stt-launcher:stop-others', keep),
 
+  /** Active hardware runtime profile (cpu / igpu / npu) for UI display. */
+  getRuntimeProfile: (): Promise<{
+    id: string
+    label: string
+    notes: string
+    summary: string
+  }> => ipcRenderer.invoke('runtime-profile:get'),
+
   /** Port probe only — engine running? (never spawns). */
   getSttEngineStatus: (
     engine: string

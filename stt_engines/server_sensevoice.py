@@ -56,8 +56,23 @@ except ImportError as e:
     print(f"❌ 导入失败，请检查环境: {e}")
     sys.exit(1)
 
-# 自动分配硬件
-compute_device = "cuda:0" if torch.cuda.is_available() else "cpu"
+# 硬件选择：STT_DEVICE 环境变量由 runtime profile 注入
+#   cpu  — 强制 CPU（兜底档）
+#   dml  — AMD iGPU 走 DirectML（需 torch-directml，缺失则回退 CPU）
+#   auto/未设 — 有 CUDA 用 CUDA，否则 CPU
+_stt_dev = os.environ.get("STT_DEVICE", "auto").strip().lower()
+if _stt_dev == "cpu":
+    compute_device = "cpu"
+elif _stt_dev == "dml":
+    try:
+        import torch_directml
+        compute_device = torch_directml.device()
+        print("-> DirectML 设备已启用")
+    except Exception as _e:
+        print(f"-> torch-directml 不可用（{_e}），回退 CPU")
+        compute_device = "cpu"
+else:
+    compute_device = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(f"-> 策略：使用 {compute_device} 进行运算")
 
 model_source = resolve_model_source()
