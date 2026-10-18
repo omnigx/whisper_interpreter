@@ -44,7 +44,12 @@ export function logSessionEvent(
       : {}),
     ...(typeof partial.sample_rate_hz === 'number' && Number.isFinite(partial.sample_rate_hz)
       ? { sample_rate_hz: partial.sample_rate_hz }
-      : {})
+      : {}),
+    ...(typeof partial.lang_tag === 'string' && partial.lang_tag
+      ? { lang_tag: partial.lang_tag }
+      : {}),
+    ...(partial.low_confidence === true ? { low_confidence: true } : {}),
+    ...(partial.wrong_lang === true ? { wrong_lang: true } : {})
   }
   try {
     window.whisperApi?.appendSessionLog?.(entry)

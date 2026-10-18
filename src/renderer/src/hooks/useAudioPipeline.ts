@@ -596,7 +596,12 @@ export function useAudioPipeline(): {
           // 情形A：整段就是短尾（很快说完）→ 全段并回前句
           if (text.length <= 10 && tailDurMs <= 3000) {
             capTailCtxRef.current = null
-            const merged = ctx.text + text
+            // 标点卫生：尾巴以标点开头时去掉前句假句号再拼接
+            const tailStartsPunct = /^[，。！？、,.!?]/.test(text)
+            const prevBase = tailStartsPunct
+              ? ctx.text.replace(/[。！？!?.]+$/, '')
+              : ctx.text
+            const merged = prevBase + text
             upsertTranscript({
               id: ctx.sourceId,
               text: merged,
