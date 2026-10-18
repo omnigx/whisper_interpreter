@@ -515,7 +515,7 @@ export function FullSizeMode({
                   t.type === 'system' ? (
                     <div
                       key={t.id}
-                      className="py-1 text-center text-sm italic text-white/40"
+                      className="py-1 text-center text-sm italic text-[var(--text-muted)]/60"
                       style={itemGapStyle}
                     >
                       {t.text}

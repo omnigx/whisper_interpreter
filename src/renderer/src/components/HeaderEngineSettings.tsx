@@ -375,8 +375,7 @@ export function HeaderEngineSettings(): React.JSX.Element {
                 )}
                 <p className="text-[10px] leading-snug text-[var(--text-muted)]/70">
                   引擎输出逐行记入 logs/stt_launcher.log（含识别结果与异常）；
-                  「开始听写」时也会自动拉起；停止仅作用于由本应用启动的引擎，
-                  6GB 显存只够一个引擎驻留，切换引擎自动互斥。
+                  「开始听写」时也会自动拉起；停止仅作用于由本应用启动的引擎。
                 </p>
               </div>
             )}
