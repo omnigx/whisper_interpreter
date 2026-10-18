@@ -110,6 +110,29 @@ export async function createSileroVadAsync(
     const modelUrl = `${window.location.origin}/vad/silero_vad_v5.onnx`
     let model = await SileroV5Session.create(modelUrl)
 
+    // ---- First-inference warmup ----
+    // Some AMD iGPU machines hang (pending, never rejects) on the FIRST ort
+    // inference. Warm up with a silent frame before any real audio: on a 2s
+    // timeout, recreate the session (up to 3x). This moves recovery from the
+    // mid-stream watchdog (8s+) to startup (~2s worst case per attempt).
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await Promise.race([
+          model.process(new Float32Array(FRAME_SAMPLES)),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('warmup timeout')), 2000)
+          )
+        ])
+        model.reset() // discard warmup state
+        if (attempt > 1) console.warn(`[VAD] 预热第 ${attempt} 次尝试后成功`)
+        break
+      } catch {
+        console.warn(`[VAD] 首次推理悬挂（${attempt}/3），重建会话`)
+        void model.release().catch(() => undefined)
+        model = await SileroV5Session.create(modelUrl)
+      }
+    }
+
     const residual = new Float32Array(FRAME_SAMPLES * 4)
     let residualLen = 0
     const speechFrames: Float32Array[] = []
