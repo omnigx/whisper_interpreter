@@ -179,7 +179,7 @@ export function AppFooter({
             useDebugMode() ? 'bg-amber-400' : 'bg-slate-500'
           }`}
         />
-        debug
+        DEBUG
       </span>
 
       <div className="ml-auto flex items-center gap-1.5">
