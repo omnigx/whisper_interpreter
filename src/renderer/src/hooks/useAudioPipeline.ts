@@ -574,7 +574,7 @@ export function useAudioPipeline(): {
           return
         }
         setPartialText('')
-        const text = result.text.trim()
+        let text = result.text.trim()
         if (!text) return
         if (langDiagCountRef.current < 3) {
           langDiagCountRef.current += 1
@@ -592,7 +592,9 @@ export function useAudioPipeline(): {
         } else {
           const ctx = capTailCtxRef.current
           const tailDurMs = sttSegDurRef.current ?? 0
-          if (ctx && Date.now() - ctx.at < 5000 && text.length <= 10 && tailDurMs <= 3000) {
+          if (ctx && Date.now() - ctx.at < 8000) {
+          // 情形A：整段就是短尾（很快说完）→ 全段并回前句
+          if (text.length <= 10 && tailDurMs <= 3000) {
             capTailCtxRef.current = null
             const merged = ctx.text + text
             upsertTranscript({
@@ -617,7 +619,46 @@ export function useAudioPipeline(): {
             runTranslate(merged, ctx.sourceId)
             return
           }
-          capTailCtxRef.current = null
+          // 情形B：后段开头的首个句读（≤15字内出现。！？）是前句的补完
+          //   → 句读前（含）划归前句重译，剩余部分作为新句继续
+          const m = /^[\s\S]{2,15}?[。！？!?]/.exec(text)
+          if (m) {
+            const head = m[0]
+            const rest = text.slice(head.length).trim()
+            const prevText = ctx.text.replace(/[。！？!?.\s]+$/, '') // 去掉切断处的假句号
+            const merged = prevText + head
+            upsertTranscript({
+              id: ctx.sourceId,
+              text: merged,
+              isFinal: true,
+              timestamp: Date.now(),
+              lang: detectLanguage(merged)
+            })
+            const oldTr = useAppStore
+              .getState()
+              .translations.find((t) => t.sourceId === ctx.sourceId)
+            if (oldTr) removeTranslation(oldTr.id)
+            logSessionEvent({
+              module: 'STT',
+              model_name:
+                useAppStore.getState().settings.stt.model ||
+                useAppStore.getState().settings.stt.provider,
+              content: merged,
+              reason: 'cap_head_reallocated'
+            })
+            runTranslate(merged, ctx.sourceId)
+            capTailCtxRef.current = null
+            if (rest) {
+              text = rest
+            } else {
+              return
+            }
+          } else {
+            capTailCtxRef.current = null
+          }
+          } else {
+            capTailCtxRef.current = null
+          }
         }
         // 语种：优先引擎自带 LID 标签；异常标签只标记不路由（语言对始终
         // 由切换键主方向 + 字符启发式决定，标签错误不传染翻译方向）
