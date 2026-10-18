@@ -58,10 +58,22 @@ class SileroV5Session {
   static async create(modelUrl: string): Promise<SileroV5Session> {
     ort.env.wasm.wasmPaths = `${window.location.origin}/ort/`
     ort.env.wasm.numThreads = 1
+    // 推理放 worker：会话创建（ONNX 编译）与逐帧推理都不再阻塞主线程
+    // （AMD 机型主线程编译一次数秒 = UI 卡顿的来源）；若 worker 不可用
+    // 自动回退主线程执行
+    ort.env.wasm.proxy = true
     const res = await fetch(modelUrl)
     if (!res.ok) throw new Error(`Failed to fetch Silero model: ${res.status}`)
     const buf = await res.arrayBuffer()
-    const session = await ort.InferenceSession.create(buf)
+    let session: ort.InferenceSession
+    try {
+      session = await ort.InferenceSession.create(buf)
+    } catch (proxyErr) {
+      // worker 不可用（加载/打包环境限制）→ 回退主线程执行
+      console.warn('[VAD] proxy worker 不可用，回退主线程推理', proxyErr)
+      ort.env.wasm.proxy = false
+      session = await ort.InferenceSession.create(buf)
+    }
     const state = new ort.Tensor('float32', new Float32Array(2 * 128), [2, 1, 128])
     const sr = new ort.Tensor('int64', BigInt64Array.from([BigInt(SAMPLE_RATE)]))
     return new SileroV5Session(session, state, sr)
