@@ -5,6 +5,7 @@ import {
   localSttLauncherKey,
   pipelineModeLabel
 } from '@shared/types'
+import { listResidentOllamaModels } from '../services/llm'
 import { useAppStore } from '../stores/appStore'
 import { useNetworkMonitor } from '../hooks/useNetworkMonitor'
 
@@ -85,12 +86,40 @@ export function AppFooter({
       : 'bg-slate-500'
   const sttLabel = sttReady ? 'STT就绪' : sttStarting ? 'STT启动中' : 'STT未启动'
 
-  // LLM 就绪灯：N/A 隐藏 · 绿=活动端点可达 · 琥珀=不可达/未知
-  const llmReachable =
+  // LLM 就绪灯（三色，同 STT 灯逻辑）：
+  // 灰=未驻留 · 琥珀=Ollama可达但模型未驻留 · 绿=模型已驻留GPU
+  const activeLlmModel = activeLlm?.provider === 'ollama' ? activeLlm.model : null
+  const [llmResident, setLlmResident] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!activeLlmModel) {
+      setLlmResident(null)
+      return
+    }
+    let alive = true
+    const probe = (): void => {
+      void listResidentOllamaModels()
+        .then((r) => {
+          if (alive) setLlmResident(r.some((n) => n === activeLlmModel))
+        })
+        .catch(() => {
+          if (alive) setLlmResident(null)
+        })
+    }
+    probe()
+    const t = window.setInterval(probe, 5000)
+    return () => {
+      alive = false
+      window.clearInterval(t)
+    }
+  }, [activeLlmModel])
+  const llmReady =
     activeLlm?.provider === 'ollama'
-      ? localLlmReachable !== false
+      ? llmResident === true
       : cloudReachable !== false
-  const llmDot = llmReachable ? 'bg-emerald-400' : 'bg-amber-400'
+  const llmStarting =
+    activeLlm?.provider === 'ollama' ? localLlmReachable === true && llmResident !== true : false
+  const llmDot = llmReady ? 'bg-emerald-400' : llmStarting ? 'bg-amber-400' : 'bg-slate-500'
+  const llmLabel = llmReady ? 'LLM就绪' : llmStarting ? 'LLM加载中' : 'LLM未驻留'
 
   const recordingUiStatus = useAppStore((s) => s.recordingUiStatus)
   const recordingDot =
@@ -156,13 +185,15 @@ export function AppFooter({
         <span
           className="inline-flex items-center gap-1.5"
           title={
-            llmReachable
-              ? `LLM 就绪 · ${activeLlm.model}`
-              : 'LLM 端点不可达——请确认 Ollama/网络已启动'
+            llmReady
+              ? `LLM 模型已驻留 GPU · ${activeLlm.model}`
+              : llmStarting
+                ? `Ollama 可达，${activeLlm.model} 尚未驻留 GPU——在引擎设置中预热，或等待首次翻译触发加载`
+                : `LLM 端点不可达——请确认 Ollama 已启动`
           }
         >
           <span className={`h-1.5 w-1.5 rounded-full ${llmDot}`} />
-          LLM就绪
+          {llmLabel}
         </span>
       )}
 

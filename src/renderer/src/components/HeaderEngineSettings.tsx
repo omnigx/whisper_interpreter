@@ -8,8 +8,11 @@ import {
 } from '@shared/types'
 import {
   fetchOllamaModels,
+  listResidentOllamaModels,
   OLLAMA_FALLBACK_MODELS,
-  pickPreferredOllamaModel
+  pickPreferredOllamaModel,
+  unloadOllamaModel,
+  warmOllamaModel
 } from '../services/llm'
 import { useAppStore } from '../stores/appStore'
 import { useClickOutside } from '../hooks/useClickOutside'
@@ -59,6 +62,9 @@ export function HeaderEngineSettings(): React.JSX.Element {
   } | null>(null)
   const [engineBusy, setEngineBusy] = useState(false)
   const [engineError, setEngineError] = useState<string | null>(null)
+  const [llmWarm, setLlmWarm] = useState<boolean | null>(null)
+  const [llmBusy, setLlmBusy] = useState(false)
+  const [llmError, setLlmError] = useState<string | null>(null)
 
   useClickOutside(rootRef, open, () => setOpen(false))
 
@@ -69,6 +75,55 @@ export function HeaderEngineSettings(): React.JSX.Element {
       .then((p) => setRuntimeProfile(p ?? null))
       .catch(() => undefined)
   }, [open])
+
+  // LLM 驻留状态轮询（仅 Ollama + 面板打开时）
+  const activeModel = isOllama ? selectedModel : null
+  useEffect(() => {
+    if (!open || !activeModel) {
+      setLlmWarm(null)
+      return
+    }
+    let alive = true
+    const probe = (): void => {
+      void listResidentOllamaModels()
+        .then((resident) => {
+          if (alive) setLlmWarm(resident.some((n) => n === activeModel))
+        })
+        .catch(() => {
+          if (alive) setLlmWarm(null)
+        })
+    }
+    probe()
+    const timer = window.setInterval(probe, 3000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [open, activeModel])
+
+  const warmLlm = async (): Promise<void> => {
+    if (!activeModel || llmBusy) return
+    setLlmBusy(true)
+    setLlmError(null)
+    try {
+      const r = await warmOllamaModel(undefined, activeModel)
+      if (!r.ok) setLlmError(r.error ?? '预热失败')
+    } catch (e) {
+      setLlmError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLlmBusy(false)
+    }
+  }
+
+  const stopLlm = async (): Promise<void> => {
+    if (!activeModel || llmBusy) return
+    setLlmBusy(true)
+    try {
+      await unloadOllamaModel(undefined, activeModel)
+    } finally {
+      setLlmBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!open || !launcherKey) return
@@ -367,6 +422,60 @@ export function HeaderEngineSettings(): React.JSX.Element {
               <p className="text-[10px] leading-snug text-[var(--text-muted)]/80">
                 切换 LLM / 模型会立即中断当前翻译并无缝接管
               </p>
+            )}
+
+            {isOllama && activeModel && (
+              <div className="flex flex-col gap-1.5 rounded border border-[var(--border)] px-2.5 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[var(--text-muted)]">模型驻留</span>
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] ${
+                      llmWarm ? 'text-emerald-400' : 'text-[var(--text-muted)]'
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        llmWarm ? 'bg-emerald-400' : 'bg-slate-500'
+                      }`}
+                    />
+                    {llmBusy
+                      ? '加载中…'
+                      : llmWarm
+                        ? '已驻留'
+                        : llmWarm === null
+                          ? '检测中'
+                          : '未驻留'}
+                  </span>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={llmWarm === true || llmBusy}
+                    onClick={() => void warmLlm()}
+                    className="flex-1 rounded bg-[var(--accent-soft)] px-2 py-1.5 text-[11px] font-medium text-[var(--accent)] transition hover:bg-[var(--accent)]/25 disabled:cursor-not-allowed disabled:opacity-40"
+                    title={`将 ${activeModel} 加载到 GPU 并保持驻留（30B 级约 20-30 秒）`}
+                  >
+                    预热模型
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!llmWarm || llmBusy}
+                    onClick={() => void stopLlm()}
+                    className="flex-1 rounded border border-[var(--border)] px-2 py-1.5 text-[11px] text-[var(--text-muted)] transition hover:border-[var(--danger)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    卸载
+                  </button>
+                </div>
+                {llmError && (
+                  <p className="text-[10px] leading-snug text-[var(--danger)]">
+                    ❌ 预热失败：{llmError}
+                  </p>
+                )}
+                <p className="text-[10px] leading-snug text-[var(--text-muted)]/70">
+                  预热 = 加载到 GPU 并永久驻留；首次翻译不再等冷加载。
+                  30B 级约 20-30 秒，4B 级约 5 秒。
+                </p>
+              </div>
             )}
           </div>
         </div>

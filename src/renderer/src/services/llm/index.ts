@@ -207,6 +207,64 @@ export function ollamaApiRoot(baseUrl = 'http://127.0.0.1:11434/v1'): string {
   return withoutV1 || 'http://127.0.0.1:11434'
 }
 
+/** Warm up (load into GPU) an Ollama model with a trivial request. */
+export async function warmOllamaModel(
+  baseUrl = 'http://127.0.0.1:11434/v1',
+  model: string,
+  timeoutMs = 120_000
+): Promise<{ ok: boolean; error?: string }> {
+  const root = ollamaApiRoot(baseUrl)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(`${root}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, prompt: '', keep_alive: -1 }),
+      signal: controller.signal
+    })
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Evict an Ollama model from GPU memory (unload). */
+export async function unloadOllamaModel(
+  baseUrl = 'http://127.0.0.1:11434/v1',
+  model: string
+): Promise<{ ok: boolean }> {
+  try {
+    const root = ollamaApiRoot(baseUrl)
+    await fetch(`${root}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, keep_alive: 0 })
+    })
+    return { ok: true }
+  } catch {
+    return { ok: false }
+  }
+}
+
+/** List models currently resident in GPU (from /api/ps). */
+export async function listResidentOllamaModels(
+  baseUrl = 'http://127.0.0.1:11434/v1'
+): Promise<string[]> {
+  try {
+    const root = ollamaApiRoot(baseUrl)
+    const res = await fetch(`${root}/api/ps`)
+    if (!res.ok) return []
+    const json = (await res.json()) as { models?: Array<{ name?: string }> }
+    return (json.models ?? []).map((m) => m.name ?? '').filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 /** Legacy fallback list when the live Ollama inventory is unavailable. */
 export const OLLAMA_FALLBACK_MODELS = ['qwen3:4b-q4-tuned', 'qwen2.5:7b', 'qwen2.5:14b']
 

@@ -54,6 +54,8 @@ interface AppState {
   sttEngineLaunching: boolean
   /** Debug mode mirror (source of truth in main process; set via test page) */
   debugMode: boolean
+  /** Ollama model currently resident in GPU (from /api/ps poll) */
+  llmModelLoaded: string | null
   /** Live Ollama model inventory (fetched once at startup + on panel open) */
   ollamaModels: string[]
 
@@ -62,6 +64,7 @@ interface AppState {
   setMicSilent: (silent: boolean) => void
   setSttEngineLaunching: (v: boolean) => void
   setDebugModeMirror: (v: boolean) => void
+  setLlmModelLoaded: (model: string | null) => void
   setAudio: (partial: Partial<AudioSettings>) => void
   setStt: (partial: Partial<SttConfig>) => void
   setEngine: (partial: Partial<EngineSettings>) => void
@@ -121,6 +124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   micSilent: false,
   sttEngineLaunching: false,
   debugMode: false,
+  llmModelLoaded: null,
 
   setDisplay: (partial) =>
     set((s) => ({
@@ -139,6 +143,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => (s.sttEngineLaunching === v ? s : { sttEngineLaunching: v })),
 
   setDebugModeMirror: (v) => set((s) => (s.debugMode === v ? s : { debugMode: v })),
+
+  setLlmModelLoaded: (model) =>
+    set((s) => (s.llmModelLoaded === model ? s : { llmModelLoaded: model })),
 
   setAudio: (partial) =>
     set((s) => ({
