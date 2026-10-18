@@ -457,7 +457,11 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
             清空
           </button>
 
-          {/* 占位：录音 / 输入源 / 引擎 / 字体设置图标按钮 h-8 w-8 */}
+          {/* 占位：录音 / 输入源 / 引擎图标按钮 h-8 w-8（前三个） */}
+          <span
+            className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
+            aria-hidden
+          />
           <span
             className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
             aria-hidden
@@ -467,11 +471,12 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
             aria-hidden
           />
 
-          {/* Debug 模式：录音/日志落 *_debug 子文件夹（底栏琥珀灯同步）。
-              放在全部占位之后——不挤占「返回」与主界面「测试」按钮的对位 */}
+          {/* Debug 模式开关：w-8 h-8 与主界面「显示设置」图标按钮等宽，
+              替换第四个占位——总宽度不变，返回与测试的对位不受影响 */}
           <button
             type="button"
             aria-pressed={debugMode}
+            aria-label="Debug 模式"
             title={debugMode ? 'Debug 模式开启中：新录音存 recordings_debug，新日志存 logs_debug' : '开启 Debug 模式（区分常规会议与调试素材）'}
             onClick={() => {
               void window.whisperApi
@@ -484,23 +489,27 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
                 })
                 .catch(() => undefined)
             }}
-            className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-xs transition ${
+            className={`flex h-8 w-8 items-center justify-center rounded border transition ${
               debugMode
-                ? 'border-amber-400/60 bg-amber-500/15 text-amber-300'
-                : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:border-amber-400/50 hover:text-[var(--text)]'
+                ? 'border-amber-400/60 bg-[var(--accent-soft)] text-amber-400'
+                : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:border-amber-400/50 hover:text-amber-300'
             }`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${debugMode ? 'bg-amber-400' : 'bg-slate-500'}`} />
-            debug
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M8 2v4M16 2v4M8 18v4M16 18v4M2 8h4M2 16h4M18 8h4M18 16h4" />
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
           </button>
-          <span
-            className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
-            aria-hidden
-          />
-          <span
-            className="pointer-events-none invisible inline-flex h-8 w-8 rounded border"
-            aria-hidden
-          />
 
           <WindowControls />
         </div>
