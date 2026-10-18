@@ -117,7 +117,9 @@ export async function createSileroVadAsync(
     // inference. Warm up with a silent frame before any real audio: on a 2s
     // timeout, recreate the session (up to 3x). This moves recovery from the
     // mid-stream watchdog (8s+) to startup (~2s worst case per attempt).
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    // 悬挂是时间性的（wasm 加载后头几秒必挂，之后自愈）——快速连续重建
+    // 无效；改为间隔重试，把恢复完整地留在启动窗口内，看门狗不再上场
+    for (let attempt = 1; attempt <= 8; attempt++) {
       try {
         await Promise.race([
           model.process(new Float32Array(FRAME_SAMPLES)),
@@ -129,7 +131,8 @@ export async function createSileroVadAsync(
         if (attempt > 1) console.warn(`[VAD] 预热第 ${attempt} 次尝试后成功`)
         break
       } catch {
-        console.warn(`[VAD] 首次推理悬挂（${attempt}/3），重建会话`)
+        console.warn(`[VAD] 首次推理悬挂（${attempt}/8，${attempt * 3}s），稍候重试`)
+        await new Promise((r) => setTimeout(r, 1500))
         void model.release().catch(() => undefined)
         model = await SileroV5Session.create(modelUrl)
       }

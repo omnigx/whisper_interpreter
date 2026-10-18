@@ -90,6 +90,12 @@ export function useAudioPipeline(): {
   const lastStatsPushRef = useRef(0)
   /** performance.now() of the last above-threshold audio frame */
   const lastLoudAtRef = useRef(0)
+  /** True right after a VAD segment ended by the 15s hard cap */
+  const capCutPendingRef = useRef(false)
+  /** The capped segment's context — its short tail may merge back in */
+  const capTailCtxRef = useRef<{ at: number; sourceId: string; text: string } | null>(null)
+  /** lang_tag 链路诊断：前 3 个 final 打点 result.lang 原始值 */
+  const langDiagCountRef = useRef(0)
   /** STT instrumentation: when the utterance was flushed + its audio length */
   const sttFlushAtRef = useRef(0)
   const sttSegDurRef = useRef<number | undefined>(undefined)
@@ -550,6 +556,8 @@ export function useAudioPipeline(): {
           // Arm STT latency measurement (flush → final text)
           sttFlushAtRef.current = performance.now()
           sttSegDurRef.current = dur
+          // 15s 上限切断的句子，其后继短尾可并回（见 onResult 合并逻辑）
+          capCutPendingRef.current = seg.reason === 'max-sentence'
           sttRef.current?.notifyUtteranceEnd?.()
         }
       })
@@ -564,6 +572,49 @@ export function useAudioPipeline(): {
         setPartialText('')
         const text = result.text.trim()
         if (!text) return
+        if (langDiagCountRef.current < 3) {
+          langDiagCountRef.current += 1
+          logSessionEvent({
+            module: 'SYS',
+            model_name: 'langtag-diag',
+            content: `result.lang=${JSON.stringify(result.lang ?? null)}`
+          })
+        }
+        // 15s 上限段的短尾并句：上限切断后 ≤5s 内出现的 ≤10 字 / ≤3s 短段，
+        // 视为同一句的尾巴，并回前段重译（替换旧译文，转写行合并显示）
+        if (capCutPendingRef.current) {
+          capCutPendingRef.current = false
+          capTailCtxRef.current = { at: Date.now(), sourceId: result.utteranceId, text }
+        } else {
+          const ctx = capTailCtxRef.current
+          const tailDurMs = sttSegDurRef.current ?? 0
+          if (ctx && Date.now() - ctx.at < 5000 && text.length <= 10 && tailDurMs <= 3000) {
+            capTailCtxRef.current = null
+            const merged = ctx.text + text
+            upsertTranscript({
+              id: ctx.sourceId,
+              text: merged,
+              isFinal: true,
+              timestamp: Date.now(),
+              lang: detectLanguage(merged)
+            })
+            const oldTr = useAppStore
+              .getState()
+              .translations.find((t) => t.sourceId === ctx.sourceId)
+            if (oldTr) removeTranslation(oldTr.id)
+            logSessionEvent({
+              module: 'STT',
+              model_name:
+                useAppStore.getState().settings.stt.model ||
+                useAppStore.getState().settings.stt.provider,
+              content: merged,
+              reason: 'cap_tail_merged'
+            })
+            runTranslate(merged, ctx.sourceId)
+            return
+          }
+          capTailCtxRef.current = null
+        }
         // 语种：优先引擎自带 LID 标签；异常标签只标记不路由（语言对始终
         // 由切换键主方向 + 字符启发式决定，标签错误不传染翻译方向）
         const rawTag =
