@@ -41,6 +41,8 @@ export type VadEngine = 'silero' | 'energy'
 export interface PcmPacket {
   /** Int16 little-endian PCM at 16 kHz mono */
   samples: Int16Array
+  /** Recording branch: same frame with -6 dB headroom applied pre-clamp */
+  recSamples?: Int16Array
   sampleRate: 16000
   timestamp: number
 }

@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { RecordingFormatId } from '../shared/types'
+import { RECORDINGS_DEBUG_SUBDIR, isDebugMode } from './debugMode'
 
 /** Values persisted in project-root config.json */
 export interface AppConfigFile {
@@ -122,13 +123,22 @@ function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true })
 }
 
-/** Absolute recording output directory; creates if missing. */
+/** Absolute recording output directory; creates if missing.
+ *  Debug mode appends the recordings_debug subfolder (same parent). */
 export function resolveRecordingDir(): string {
   const cfg = loadAppConfig()
   const raw = cfg.recording_dir || 'recordings'
   const abs = path.isAbsolute(raw) ? raw : path.join(projectRoot(), raw)
-  ensureDir(abs)
-  return abs
+  const dir = path.join(abs, ...(isDebugMode() ? [RECORDINGS_DEBUG_SUBDIR] : []))
+  ensureDir(dir)
+  return dir
+}
+
+/** Configured recording parent (without the debug subfolder). */
+export function recordingsParentDir(): string {
+  const cfg = loadAppConfig()
+  const raw = cfg.recording_dir || 'recordings'
+  return path.isAbsolute(raw) ? raw : path.join(projectRoot(), raw)
 }
 
 export function getRecordingFormatId(): RecordingFormatId {

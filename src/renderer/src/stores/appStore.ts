@@ -52,6 +52,8 @@ interface AppState {
   micSilent: boolean
   /** Local STT engine spawn in progress (spawned, model loading) */
   sttEngineLaunching: boolean
+  /** Debug mode mirror (source of truth in main process; set via test page) */
+  debugMode: boolean
   /** Live Ollama model inventory (fetched once at startup + on panel open) */
   ollamaModels: string[]
 
@@ -59,6 +61,7 @@ interface AppState {
   setOllamaModels: (models: string[]) => void
   setMicSilent: (silent: boolean) => void
   setSttEngineLaunching: (v: boolean) => void
+  setDebugModeMirror: (v: boolean) => void
   setAudio: (partial: Partial<AudioSettings>) => void
   setStt: (partial: Partial<SttConfig>) => void
   setEngine: (partial: Partial<EngineSettings>) => void
@@ -117,6 +120,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   ollamaModels: [],
   micSilent: false,
   sttEngineLaunching: false,
+  debugMode: false,
 
   setDisplay: (partial) =>
     set((s) => ({
@@ -133,6 +137,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSttEngineLaunching: (v) =>
     set((s) => (s.sttEngineLaunching === v ? s : { sttEngineLaunching: v })),
+
+  setDebugModeMirror: (v) => set((s) => (s.debugMode === v ? s : { debugMode: v })),
 
   setAudio: (partial) =>
     set((s) => ({

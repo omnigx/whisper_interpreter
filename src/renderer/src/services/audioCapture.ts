@@ -175,6 +175,7 @@ export function createAudioCapture(): AudioCaptureHandle {
       const data = ev.data as {
         type: string
         samples: Int16Array
+        recSamples?: Int16Array
         sampleRate: number
         rms: number
         timestamp: number
@@ -184,6 +185,7 @@ export function createAudioCapture(): AudioCaptureHandle {
       lastRms = data.rms
       const packet: PcmPacket = {
         samples: data.samples,
+        recSamples: data.recSamples,
         sampleRate: TARGET_RATE,
         timestamp: data.timestamp || Date.now()
       }

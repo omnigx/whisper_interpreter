@@ -15,6 +15,11 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this._frameFill = 0
     this._dsBuf = new Float32Array(0)
     this._pcm = new Int16Array(this._frameSamples)
+    // 录音支路：对未削波的原始电平施加 -6dB 衰减后再转 int16，
+    // 峰值落在 -3~-6 dBFS 区间，避免浮点→整数转换处的硬削波（0dB 撞顶）。
+    // STT/VAD 支路电平不变。
+    this._recGain = 0.5
+    this._recPcm = new Int16Array(this._frameSamples)
   }
 
   /** Linear-interpolation resample into a reused scratch buffer. */
@@ -62,25 +67,32 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
   _emitFrame() {
     const floatFrame = this._frame
     const pcm = this._pcm
+    const rec = this._recPcm
     let sum = 0
     for (let i = 0; i < floatFrame.length; i++) {
       const s = Math.max(-1, Math.min(1, floatFrame[i]))
       sum += s * s
       pcm[i] = s < 0 ? (s * 0x8000) | 0 : (s * 0x7fff) | 0
+      // 录音支路：先衰减后夹位——超过 ±2.0 的极端样本才会触及满幅
+      const r = floatFrame[i] * this._recGain
+      const rc = Math.max(-1, Math.min(1, r))
+      rec[i] = rc < 0 ? (rc * 0x8000) | 0 : (rc * 0x7fff) | 0
     }
     const rms = Math.sqrt(sum / floatFrame.length)
     this.port.postMessage(
       {
         type: 'pcm',
         samples: pcm,
+        recSamples: rec,
         sampleRate: this.targetRate,
         rms,
         timestamp: currentTime * 1000
       },
-      [pcm.buffer]
+      [pcm.buffer, rec.buffer]
     )
-    // pcm.buffer was transferred; allocate a fresh one for the next frame
+    // buffers were transferred; allocate fresh ones for the next frame
     this._pcm = new Int16Array(this._frameSamples)
+    this._recPcm = new Int16Array(this._frameSamples)
   }
 }
 

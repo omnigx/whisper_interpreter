@@ -815,7 +815,8 @@ export function useAudioPipeline(): {
           if (vadAttached) vadRef.current?.pushPcm(packet)
           else if (preVadPackets.length < 800) preVadPackets.push(packet)
           sttRef.current?.sendPcm(packet)
-          appendSyncRecordingPcm(packet.samples)
+          // 录音支路：-6dB 余量版本（无此字段时回退主支路）
+          appendSyncRecordingPcm(packet.recSamples ?? packet.samples)
         },
         onLevel: (snap: AudioLevelSnapshot) => {
           // Hot path: meters paint via direct DOM writes from meterBus —

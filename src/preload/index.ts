@@ -145,13 +145,18 @@ const api = {
   },
 
   listSessionLogs: (): Promise<
-    Array<{ name: string; size: number; mtimeMs: number }>
+    Array<{ name: string; size: number; mtimeMs: number; debug?: boolean }>
   > => ipcRenderer.invoke('session-log:list'),
 
   readSessionLog: (
-    name: string
+    name: string,
+    debug?: boolean
   ): Promise<{ ok: boolean; content?: string; error?: string }> =>
-    ipcRenderer.invoke('session-log:read', name),
+    ipcRenderer.invoke('session-log:read', name, debug === true),
+
+  /** Debug mode toggle — logs/recordings go to *_debug subfolders. */
+  setDebugMode: (v: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('debug-mode:set', v),
 
   clearSessionLogs: (): Promise<{
     ok: boolean
@@ -173,6 +178,7 @@ const api = {
       birthtimeMs: number
       ext: string
       durationSec?: number
+      debug?: boolean
     }>
   > => ipcRenderer.invoke('recordings:list'),
 

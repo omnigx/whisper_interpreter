@@ -8,6 +8,12 @@ import {
 import { useAppStore } from '../stores/appStore'
 import { useNetworkMonitor } from '../hooks/useNetworkMonitor'
 
+/** Debug mode mirror — toggled from the test page button (main-process
+ *  state is the source of truth; this subscribes to a store copy). */
+function useDebugMode(): boolean {
+  return useAppStore((s) => s.debugMode === true)
+}
+
 interface AppFooterProps {
   onOpenSettings: () => void
   onRestartListening?: () => void
@@ -159,6 +165,22 @@ export function AppFooter({
           LLM就绪
         </span>
       )}
+
+      <span
+        className="inline-flex items-center gap-1.5"
+        title={
+          useDebugMode()
+            ? 'Debug 模式：新录音存 recordings_debug，新日志存 logs_debug（在测试页切换）'
+            : 'Debug 模式未开启（在测试页的 debug 按钮切换）'
+        }
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            useDebugMode() ? 'bg-amber-400' : 'bg-slate-500'
+          }`}
+        />
+        debug
+      </span>
 
       <div className="ml-auto flex items-center gap-1.5">
         {(network === 'offline' || cloudReachable === false) && !degraded && modeOnline && (

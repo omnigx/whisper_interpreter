@@ -47,6 +47,7 @@ interface LogFileInfo {
   name: string
   size: number
   mtimeMs: number
+  debug?: boolean
 }
 
 interface RecordingFileInfo {
@@ -56,6 +57,7 @@ interface RecordingFileInfo {
   birthtimeMs: number
   ext: string
   durationSec?: number
+  debug?: boolean
 }
 
 function formatBytes(n: number): string {
@@ -105,6 +107,7 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
   const translateChainRef = useRef<Promise<void>>(Promise.resolve())
 
   const [logFiles, setLogFiles] = useState<LogFileInfo[]>([])
+  const [debugMode, setDebugModeState] = useState(false)
   const [selectedLog, setSelectedLog] = useState<string | null>(null)
   const [logPreview, setLogPreview] = useState('')
 
@@ -158,7 +161,11 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
     let cancelled = false
     void (async () => {
       try {
-        const res = await window.whisperApi?.readSessionLog?.(selectedLog)
+        const sel = logFiles.find((f) => f.name === selectedLog)
+        const res = await window.whisperApi?.readSessionLog?.(
+          selectedLog,
+          sel?.debug === true
+        )
         if (cancelled) return
         if (res?.ok && typeof res.content === 'string') setLogPreview(res.content)
         else setLogPreview(res?.error ? `读取失败：${res.error}` : '')
@@ -432,6 +439,32 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
             <span className="inline-flex h-8 w-[3.25rem]" aria-hidden />
           )}
 
+          {/* Debug 模式：录音/日志落 *_debug 子文件夹（底栏琥珀灯同步） */}
+          <button
+            type="button"
+            aria-pressed={debugMode}
+            title={debugMode ? 'Debug 模式开启中：新录音存 recordings_debug，新日志存 logs_debug' : '开启 Debug 模式（区分常规会议与调试素材）'}
+            onClick={() => {
+              void window.whisperApi
+                ?.setDebugMode?.(!debugMode)
+                .then((v) => {
+                  setDebugModeState(v)
+                  useAppStore.getState().setDebugModeMirror(v)
+                  void refreshLogs()
+                  void refreshRecordings()
+                })
+                .catch(() => undefined)
+            }}
+            className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded border px-2.5 text-xs transition ${
+              debugMode
+                ? 'border-amber-400/60 bg-amber-500/15 text-amber-300'
+                : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:border-amber-400/50 hover:text-[var(--text)]'
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${debugMode ? 'bg-amber-400' : 'bg-slate-500'}`} />
+            debug
+          </button>
+
           {/* 占位：演示 / 清空 */}
           <button
             type="button"
@@ -629,7 +662,12 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
                               : 'text-[var(--text)] hover:bg-[var(--bg-deep)]'
                           }`}
                         >
-                          <span className="min-w-0 truncate font-mono">{f.name}</span>
+                          <span className="flex min-w-0 items-center gap-1">
+                            <span className="min-w-0 truncate font-mono">{f.name}</span>
+                            {f.debug ? (
+                              <span className="shrink-0 rounded border border-amber-400/40 bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-300">debug</span>
+                            ) : null}
+                          </span>
                           <span className="shrink-0 tabular-nums text-[var(--text-muted)]">
                             {formatBytes(f.size)}
                           </span>
@@ -722,7 +760,12 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
                               : 'text-[var(--text)] hover:bg-[var(--bg-deep)]'
                           }`}
                         >
-                          <span className="min-w-0 truncate font-mono">{f.name}</span>
+                          <span className="flex min-w-0 items-center gap-1">
+                            <span className="min-w-0 truncate font-mono">{f.name}</span>
+                            {f.debug ? (
+                              <span className="shrink-0 rounded border border-amber-400/40 bg-amber-500/15 px-1 text-[9px] font-semibold text-amber-300">debug</span>
+                            ) : null}
+                          </span>
                           <span className="shrink-0 tabular-nums text-[var(--text-muted)]">
                             {formatBytes(f.size)}
                           </span>

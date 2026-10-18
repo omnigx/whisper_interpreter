@@ -7,8 +7,15 @@ import type { RecordingFormatId } from '../shared/types'
 import type { SessionLogEntry } from '../shared/sessionLog'
 import {
   getRecordingFormatId,
+  recordingsParentDir,
   resolveRecordingDir
 } from './appConfig'
+import {
+  DEBUG_SUBDIR,
+  isDebugMode,
+  RECORDINGS_DEBUG_SUBDIR,
+  setDebugMode
+} from './debugMode'
 
 const SAMPLE_RATE = 16000
 const CHANNELS = 1
@@ -43,9 +50,18 @@ let llmDraining = false
 const MAX_QUEUED_LOG_LINES = 5000
 
 function logsDir(): string {
-  const dir = path.join(projectRoot(), 'logs')
+  const dir = path.join(
+    projectRoot(),
+    'logs',
+    ...(isDebugMode() ? [DEBUG_SUBDIR] : [])
+  )
   ensureDir(dir)
   return dir
+}
+
+/** Parent logs dir for list merging (normal + debug subfolder). */
+function logsParentDir(): string {
+  return path.join(projectRoot(), 'logs')
 }
 
 function ensureSttLogFile(): string {
@@ -101,28 +117,38 @@ function rotateSessionLog(): void {
   llmLogPath = null
 }
 
-function listLogFiles(): Array<{ name: string; size: number; mtimeMs: number }> {
-  const dir = logsDir()
+type LogFileMeta = { name: string; size: number; mtimeMs: number; debug?: boolean }
+
+function scanLogDir(dir: string, debug: boolean): LogFileMeta[] {
   try {
     return fs
       .readdirSync(dir)
       .filter((n) => n.endsWith('.jsonl') || n.endsWith('.log'))
       .map((name) => {
-        const full = path.join(dir, name)
-        const st = fs.statSync(full)
-        return { name, size: st.size, mtimeMs: st.mtimeMs }
+        const st = fs.statSync(path.join(dir, name))
+        return { name, size: st.size, mtimeMs: st.mtimeMs, ...(debug ? { debug: true } : {}) }
       })
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)
   } catch {
     return []
   }
 }
 
-function readLogFile(name: string): { ok: boolean; content?: string; error?: string } {
+function listLogFiles(): LogFileMeta[] {
+  return [
+    ...scanLogDir(logsParentDir(), false),
+    ...scanLogDir(path.join(logsParentDir(), DEBUG_SUBDIR), true)
+  ].sort((a, b) => b.mtimeMs - a.mtimeMs)
+}
+
+function readLogFile(name: string, debug = false): { ok: boolean; content?: string; error?: string } {
   if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) {
     return { ok: false, error: 'invalid name' }
   }
-  const full = path.join(logsDir(), name)
+  const full = path.join(
+    path.join(projectRoot(), 'logs'),
+    ...(debug ? [DEBUG_SUBDIR] : []),
+    name
+  )
   try {
     if (!fs.existsSync(full)) return { ok: false, error: 'not found' }
     const content = fs.readFileSync(full, 'utf8')
@@ -162,6 +188,14 @@ function clearLogFiles(): { ok: boolean; removed: number; error?: string } {
 
 const AUDIO_EXTS = new Set(['.wav', '.mp3', '.flac'])
 
+function safeReaddir(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir)
+  } catch {
+    return []
+  }
+}
+
 function listRecordingFiles(): Array<{
   name: string
   size: number
@@ -169,18 +203,34 @@ function listRecordingFiles(): Array<{
   birthtimeMs: number
   ext: string
   durationSec?: number
+  debug?: boolean
 }> {
-  const dir = resolveRecordingDir()
+  const dir = recordingsParentDir()
+  const entries: Array<{ debug: boolean; files: string[] }> = [
+    { debug: false, files: safeReaddir(dir) },
+    { debug: true, files: safeReaddir(path.join(dir, RECORDINGS_DEBUG_SUBDIR)) }
+  ]
+  const combined = entries.flatMap(({ debug, files }) =>
+    files.map((name) => ({ name, debug }))
+  )
   try {
-    return fs
-      .readdirSync(dir)
-      .filter((n) => {
-        if (n.startsWith('.')) return false
-        const ext = path.extname(n).toLowerCase()
-        return AUDIO_EXTS.has(ext)
-      })
-      .map((name) => {
-        const full = path.join(dir, name)
+    return (function mapAll() {
+      const out: Array<{
+        name: string
+        size: number
+        mtimeMs: number
+        birthtimeMs: number
+        ext: string
+        durationSec?: number
+        debug?: boolean
+      }> = []
+      for (const { name, debug } of combined) {
+        const full = path.join(
+          dir,
+          ...(debug ? [RECORDINGS_DEBUG_SUBDIR] : []),
+          name
+        )
+        if (!fs.existsSync(full)) continue
         const st = fs.statSync(full)
         const ext = path.extname(name).toLowerCase()
         let durationSec: number | undefined
@@ -191,20 +241,23 @@ function listRecordingFiles(): Array<{
             durationSec = undefined
           }
         }
-        return {
+        out.push({
           name,
           size: st.size,
           mtimeMs: st.mtimeMs,
           birthtimeMs: st.birthtimeMs || st.ctimeMs || st.mtimeMs,
           ext,
-          ...(durationSec != null ? { durationSec } : {})
-        }
-      })
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+          ...(durationSec != null ? { durationSec } : {}),
+          ...(debug ? { debug: true } : {})
+        })
+      }
+      return out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    })()
   } catch {
     return []
   }
 }
+
 
 /** Minimal WAV duration from header (PCM / standard fmt chunk). */
 function readWavDurationSec(filePath: string): number | undefined {
@@ -522,9 +575,17 @@ export function registerSessionIoIpc(): void {
 
   ipcMain.handle('session-log:list', () => listLogFiles())
 
-  ipcMain.handle('session-log:read', (_event, name: unknown) =>
-    readLogFile(typeof name === 'string' ? name : '')
+  ipcMain.handle('session-log:read', (_event, name: unknown, debug: unknown) =>
+    readLogFile(typeof name === 'string' ? name : '', debug === true)
   )
+
+  /** Debug mode toggle: rotates the session log so the next entries land in
+   *  the newly selected folder. Returns the new state. */
+  ipcMain.handle('debug-mode:set', (_event, v: unknown) => {
+    const state = setDebugMode(v === true)
+    rotateSessionLog()
+    return state
+  })
 
   ipcMain.handle('session-log:clear', () => clearLogFiles())
 
