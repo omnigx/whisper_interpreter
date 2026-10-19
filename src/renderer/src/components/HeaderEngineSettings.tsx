@@ -318,12 +318,12 @@ export function HeaderEngineSettings(): React.JSX.Element {
 
             {launcherKey && (
               <div className="flex flex-col gap-1.5 rounded border border-[var(--border)] px-2.5 py-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-[var(--text-muted)]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[10px] text-[var(--text-muted)]">
                     引擎进程{runtimeProfile ? ` · ${runtimeProfile.summary}` : ''}
                   </span>
                   <span
-                    className={`inline-flex items-center gap-1 text-[10px] ${
+                    className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] ${
                       engineRunning ? 'text-emerald-400' : 'text-[var(--text-muted)]'
                     }`}
                   >
