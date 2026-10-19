@@ -35,6 +35,7 @@ import {
   BrainIcon,
   MicIcon,
   PanelQuickMenu,
+  QuickMenuHeader,
   QuickMenuItem
 } from '../components/PanelQuickMenu'
 
@@ -459,7 +460,7 @@ export function FullSizeMode({
               </span>
               <PanelQuickMenu
                 label="切换 LLM"
-                title="快速切换 LLM"
+                title="快速切换 LLM（云端 + 本地 Ollama 实时列表）"
                 icon={<BrainIcon />}
                 accentClass="hover:border-[var(--target)] hover:text-[var(--target)]"
               >
@@ -469,31 +470,43 @@ export function FullSizeMode({
                 >
                   N/A (不启用)
                 </QuickMenuItem>
-                {settings.llms.flatMap((l) => {
-                  if (l.provider === 'ollama') {
-                    const localModels = ollamaModels.length > 0 ? ollamaModels : OLLAMA_FALLBACK_MODELS
-                    return [...localModels, l.model]
-                      .filter((v, i, a) => a.indexOf(v) === i)
-                      .map((m) => (
-                        <QuickMenuItem
-                          key={`${l.id}-${m}`}
-                          active={!llmDisabled && activeLlm?.id === l.id && activeLlm.model === m}
-                          onClick={() => selectLlm(l.id, m)}
-                        >
-                          [本地] {m}
-                        </QuickMenuItem>
-                      ))
-                  }
-                  return [
+
+                {/* 云端引擎 */}
+                {settings.llms.filter((l) => l.tier === 'cloud').length > 0 && (
+                  <QuickMenuHeader>云端</QuickMenuHeader>
+                )}
+                {settings.llms
+                  .filter((l) => l.tier === 'cloud')
+                  .map((l) => (
                     <QuickMenuItem
                       key={l.id}
                       active={!llmDisabled && activeLlm?.id === l.id}
                       onClick={() => selectLlm(l.id)}
                     >
-                      [{l.tier === 'cloud' ? '云' : '本地'}] {l.label}
+                      {l.label} · {l.model}
                     </QuickMenuItem>
-                  ]
-                })}
+                  ))}
+
+                {/* 本地 Ollama 模型（启动拉取 + 实时清单） */}
+                <QuickMenuHeader>本地</QuickMenuHeader>
+                {(() => {
+                  const ollama = settings.llms.find((l) => l.provider === 'ollama')
+                  if (!ollama) return null
+                  const localModels =
+                    ollamaModels.length > 0 ? ollamaModels : OLLAMA_FALLBACK_MODELS
+                  return [...localModels, ollama.model]
+                    .filter((v, i, a) => a.indexOf(v) === i)
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((m) => (
+                      <QuickMenuItem
+                        key={`${ollama.id}-${m}`}
+                        active={!llmDisabled && activeLlm?.id === ollama.id && activeLlm.model === m}
+                        onClick={() => selectLlm(ollama.id, m)}
+                      >
+                        {m}
+                      </QuickMenuItem>
+                    ))
+                })()}
               </PanelQuickMenu>
             </div>
             <div

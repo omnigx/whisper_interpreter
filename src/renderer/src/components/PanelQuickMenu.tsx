@@ -60,6 +60,14 @@ export function PanelQuickMenu({
   )
 }
 
+export function QuickMenuHeader({ children }: { children: ReactNode }): React.JSX.Element {
+  return (
+    <p className="px-2.5 pt-1.5 pb-0.5 text-[9px] font-medium uppercase tracking-wider text-[var(--text-muted)]/60">
+      {children}
+    </p>
+  )
+}
+
 export function QuickMenuItem({
   active,
   children,
