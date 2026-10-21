@@ -29,23 +29,27 @@ import { detectLanguage } from '../utils/detectLanguage'
  * (or vice versa). Short English terms embedded in Chinese (AI, CEO) don't trigger.
  */
 function detectLanguageBoundary(text: string): { zh: string; en: string } | null {
-  // Chinese tail -> English sentence head
-  const zhToEn = text.match(
-    /([一-鿿　-〿，。！？\s]{5,})\s*([a-zA-Z][a-zA-Z]*(?:\s+[a-zA-Z,.!?'\-]+){3,})/
-  )
-  if (zhToEn) {
-    const zh = zhToEn[1].trim()
-    const en = zhToEn[2].trim()
-    if (zh.length >= 5 && en.split(/\s+/).length >= 4) return { zh, en }
-  }
-  // English tail -> Chinese sentence head
-  const enToZh = text.match(
-    /((?:[a-zA-Z]+[\s,.!?'\-]*){4,})\s*([一-鿿　-〿，。！？]{5,})/
-  )
-  if (enToZh) {
-    const en = enToZh[1].trim()
-    const zh = enToZh[2].trim()
-    if (en.split(/\s+/).length >= 4 && zh.length >= 5) return { zh, en }
+  const isCJK = (c: string): boolean =>
+    (c >= '一' && c <= '鿿') || '，。！？、；：'.includes(c)
+  const isLatin = (c: string): boolean =>
+    /[a-zA-Z]/.test(c) || ' .,!?'\-'.includes(c)
+
+  // 从左向右扫描：找 CJK→Latin 的切换点
+  let lastCJK = -1
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] >= '一' && text[i] <= '鿿') lastCJK = i
+    // 找到 CJK 后首次出现连续 Latin 的位置
+    if (lastCJK >= 0 && i > lastCJK + 4) {
+      const after = text.slice(i).trim()
+      const words = after.split(/[\s,]+/).filter((w) => w.length > 0)
+      const latinChars = after.replace(/[^a-zA-Z]/g, '').length
+      const latinRatio = latinChars / Math.max(after.replace(/\s/g, '').length, 1)
+      if (words.length >= 4 && latinRatio > 0.7) {
+        const zh = text.slice(0, i).trim()
+        if (zh.length >= 5) return { zh, en: after }
+      }
+      break // 只检查第一个切换点
+    }
   }
   return null
 }
