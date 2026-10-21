@@ -32,7 +32,7 @@ function detectLanguageBoundary(text: string): { zh: string; en: string } | null
   const isCJK = (c: string): boolean =>
     (c >= '一' && c <= '鿿') || '，。！？、；：'.includes(c)
   const isLatin = (c: string): boolean =>
-    /[a-zA-Z]/.test(c) || ' .,!?'\-'.includes(c)
+    /[a-zA-Z]/.test(c) || ' .,!?-'.includes(c)
 
   // 从左向右扫描：找 CJK→Latin 的切换点
   let lastCJK = -1
