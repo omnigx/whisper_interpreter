@@ -699,38 +699,41 @@ export function useAudioPipeline(): {
         })
         sttFlushAtRef.current = 0
 
-        // ---- 标点级分句 ----
-        // STT 返回的段可能含多个句号（SenseVoice 已标点但 VAD 未在句间断开）。
-        // 按句末标点拆分为独立句，逐句送翻——降低单次 LLM 提示词长度，
-        // 首句译文不再被同段后续句子拖累。
-        // 规则：至少 2 个句末标点才拆；拆后每句 ≥4 个字符（防碎片）。
-        const SENTENCE_END = /[。！？!?]/
+        // ---- 标点级分句（策略 B：只拆第一句） ----
+        // STT 返回的段可能含多个句号（SenseVoice 按声学停顿标点，非语义完结）。
+        // 策略 B：只在第一个句末标点处拆分——首句立即送翻（延迟收益最大），
+        // 剩余整块送翻（防换气句号误判导致语义碎片化）。
+        // 后续可升级为 A（保守最短长度）/ C（激进全拆）或用户可配置。
         const punctCount = (text.match(/[。！？!?]/g) || []).length
         if (punctCount >= 2) {
-          const parts = text
-            .split(/(?<=[。！？!?])/)
-            .map((s) => s.trim())
-            .filter((s) => s.length >= 4)
-          if (parts.length >= 2) {
-            parts.forEach((sentence, idx) => {
-              const subId =
-                parts.length === 1
-                  ? result.utteranceId
-                  : `${result.utteranceId}-s${idx + 1}`
-              upsertTranscript({
-                id: subId,
-                text: sentence,
-                isFinal: true,
-                timestamp: Date.now(),
-                lang: detectLanguage(sentence)
-              })
-              runTranslate(sentence, subId, rawTag || undefined)
+          const firstEnd = text.search(/[。！？!?]/)
+          const head = text.slice(0, firstEnd + 1).trim()
+          const rest = text.slice(firstEnd + 1).trim()
+          // 首句 ≥6 字、剩余 ≥8 字才拆（防碎片）
+          if (head.length >= 6 && rest.length >= 8) {
+            const headId = `${result.utteranceId}-s1`
+            const restId = `${result.utteranceId}-s2`
+            upsertTranscript({
+              id: headId,
+              text: head,
+              isFinal: true,
+              timestamp: Date.now(),
+              lang: detectLanguage(head)
             })
+            upsertTranscript({
+              id: restId,
+              text: rest,
+              isFinal: true,
+              timestamp: Date.now(),
+              lang: detectLanguage(rest)
+            })
+            runTranslate(head, headId, rawTag || undefined)
+            runTranslate(rest, restId, rawTag || undefined)
             logSessionEvent({
               module: 'SYS',
               model_name: 'punct-split',
-              content: `punctuation split: {punctCount}句号 → ${parts.length}句`,
-              reason: 'punct_split'
+              content: `strategy B: ${punctCount}句号 → 2句 (head=${head.length}字 rest=${rest.length}字)`,
+              reason: 'punct_split_b'
             })
             return
           }
