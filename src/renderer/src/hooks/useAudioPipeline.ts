@@ -21,6 +21,34 @@ import {
   directionLabel
 } from '../services/translationDirection'
 import { detectLanguage } from '../utils/detectLanguage'
+
+/**
+ * Detect a Chinese<->English sentence-level language switch inside one text.
+ * Returns {zh, en} if found, null otherwise.
+ * Criteria: >=5 consecutive CJK chars followed by >=4 consecutive English words
+ * (or vice versa). Short English terms embedded in Chinese (AI, CEO) don't trigger.
+ */
+function detectLanguageBoundary(text: string): { zh: string; en: string } | null {
+  // Chinese tail -> English sentence head
+  const zhToEn = text.match(
+    /([一-鿿　-〿，。！？\s]{5,})\s*([A-Z][a-zA-Z]*(?:\s+[a-zA-Z,.!?'\-]+){3,})/
+  )
+  if (zhToEn) {
+    const zh = zhToEn[1].trim()
+    const en = zhToEn[2].trim()
+    if (zh.length >= 5 && en.split(/\s+/).length >= 4) return { zh, en }
+  }
+  // English tail -> Chinese sentence head
+  const enToZh = text.match(
+    /((?:[a-zA-Z]+[\s,.!?'\-]*){4,})\s*([一-鿿　-〿，。！？]{5,})/
+  )
+  if (enToZh) {
+    const en = enToZh[1].trim()
+    const zh = enToZh[2].trim()
+    if (en.split(/\s+/).length >= 4 && zh.length >= 5) return { zh, en }
+  }
+  return null
+}
 import { ensureLlmApiKey } from '../services/secureApiKeys'
 import { abortPendingTermExtract } from '../utils/termExtractControl'
 import { createThrottledEmitter } from '../utils/streamingUpdate'
@@ -97,6 +125,8 @@ export function useAudioPipeline(): {
   const capTailCtxRef = useRef<{ at: number; sourceId: string; text: string } | null>(null)
   /** lang_tag 链路诊断：前 3 个 final 打点 result.lang 原始值 */
   const langDiagCountRef = useRef(0)
+  /** 去重闸门：最近送翻的文本（10 秒内重复则跳过） */
+  const recentSentRef = useRef<Array<{ text: string; at: number }>>([])
   /** STT instrumentation: when the utterance was flushed + its audio length */
   const sttFlushAtRef = useRef(0)
   const sttSegDurRef = useRef<number | undefined>(undefined)
@@ -412,6 +442,22 @@ export function useAudioPipeline(): {
       if (!unit.trim()) return
       const st = useAppStore.getState().settings
       if (st.engine.activeLlmId === 'none' || !getActiveLlm(st)) return
+      // 去重闸门：10 秒内相同文本不重复送翻（防管线交互产生的重复队列项）
+      const now = Date.now()
+      const trimmed = unit.trim()
+      recentSentRef.current = recentSentRef.current.filter(
+        (r) => now - r.at < 10_000
+      )
+      if (recentSentRef.current.some((r) => r.text === trimmed)) {
+        logSessionEvent({
+          module: 'SYS',
+          model_name: 'dedup-guard',
+          content: `重复文本跳过送翻: ${trimmed.slice(0, 40)}`,
+          reason: 'duplicate_skip'
+        })
+        return
+      }
+      recentSentRef.current.push({ text: trimmed, at: now })
       translateQueueRef.current.push({ unit, sourceId, langTag })
       void drainTranslateQueue()
     },
@@ -698,6 +744,41 @@ export function useAudioPipeline(): {
           ...(lowConf ? { low_confidence: true } : {})
         })
         sttFlushAtRef.current = 0
+
+        // ---- 语言边界分句 ----
+        // 中英文整句快速切换（同一 VAD 段内）：在语言切换处拆分，
+        // 各语言段独立送翻并路由到正确方向。中文中夹杂的英文术语不触发。
+        {
+          const langSplit = detectLanguageBoundary(text)
+          if (langSplit) {
+            const { zh, en } = langSplit
+            const zhId = `${result.utteranceId}-lz`
+            const enId = `${result.utteranceId}-le`
+            upsertTranscript({
+              id: zhId,
+              text: zh,
+              isFinal: true,
+              timestamp: Date.now(),
+              lang: 'zh'
+            })
+            upsertTranscript({
+              id: enId,
+              text: en,
+              isFinal: true,
+              timestamp: Date.now(),
+              lang: 'en'
+            })
+            runTranslate(zh, zhId, 'zh')
+            runTranslate(en, enId, 'en')
+            logSessionEvent({
+              module: 'SYS',
+              model_name: 'lang-split',
+              content: `中英切换分句: zh=${zh.length}字 en=${en.length}字`,
+              reason: 'lang_boundary_split'
+            })
+            return
+          }
+        }
 
         // ---- 标点级分句（策略 B：只拆第一句） ----
         // STT 返回的段可能含多个句号（SenseVoice 按声学停顿标点，非语义完结）。
