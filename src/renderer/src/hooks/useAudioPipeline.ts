@@ -698,6 +698,44 @@ export function useAudioPipeline(): {
           ...(lowConf ? { low_confidence: true } : {})
         })
         sttFlushAtRef.current = 0
+
+        // ---- 标点级分句 ----
+        // STT 返回的段可能含多个句号（SenseVoice 已标点但 VAD 未在句间断开）。
+        // 按句末标点拆分为独立句，逐句送翻——降低单次 LLM 提示词长度，
+        // 首句译文不再被同段后续句子拖累。
+        // 规则：至少 2 个句末标点才拆；拆后每句 ≥4 个字符（防碎片）。
+        const SENTENCE_END = /[。！？!?]/
+        const punctCount = (text.match(/[。！？!?]/g) || []).length
+        if (punctCount >= 2) {
+          const parts = text
+            .split(/(?<=[。！？!?])/)
+            .map((s) => s.trim())
+            .filter((s) => s.length >= 4)
+          if (parts.length >= 2) {
+            parts.forEach((sentence, idx) => {
+              const subId =
+                parts.length === 1
+                  ? result.utteranceId
+                  : `${result.utteranceId}-s${idx + 1}`
+              upsertTranscript({
+                id: subId,
+                text: sentence,
+                isFinal: true,
+                timestamp: Date.now(),
+                lang: detectLanguage(sentence)
+              })
+              runTranslate(sentence, subId, rawTag || undefined)
+            })
+            logSessionEvent({
+              module: 'SYS',
+              model_name: 'punct-split',
+              content: `punctuation split: {punctCount}句号 → ${parts.length}句`,
+              reason: 'punct_split'
+            })
+            return
+          }
+        }
+
         runTranslate(text, result.utteranceId, rawTag || undefined)
       }
       client.onSystem = (message) => {
