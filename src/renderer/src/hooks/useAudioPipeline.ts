@@ -31,7 +31,7 @@ import { detectLanguage } from '../utils/detectLanguage'
 function detectLanguageBoundary(text: string): { zh: string; en: string } | null {
   // Chinese tail -> English sentence head
   const zhToEn = text.match(
-    /([一-鿿　-〿，。！？\s]{5,})\s*([A-Z][a-zA-Z]*(?:\s+[a-zA-Z,.!?'\-]+){3,})/
+    /([一-鿿　-〿，。！？\s]{5,})\s*([a-zA-Z][a-zA-Z]*(?:\s+[a-zA-Z,.!?'\-]+){3,})/
   )
   if (zhToEn) {
     const zh = zhToEn[1].trim()
