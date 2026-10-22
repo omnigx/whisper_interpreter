@@ -446,13 +446,20 @@ export function useAudioPipeline(): {
       if (!unit.trim()) return
       const st = useAppStore.getState().settings
       if (st.engine.activeLlmId === 'none' || !getActiveLlm(st)) return
-      // 去重闸门：10 秒内相同文本不重复送翻（防管线交互产生的重复队列项）
+      // 去重闸门：10 秒内前缀重复的文本不重复送翻。
+      // 精确匹配漏掉了 cap-tail merge 重发的近似重复（前缀相同、尾部多了
+      // 合并内容），改为前缀比对（前 30 字符相同即视为重复）
       const now = Date.now()
       const trimmed = unit.trim()
       recentSentRef.current = recentSentRef.current.filter(
         (r) => now - r.at < 10_000
       )
-      if (recentSentRef.current.some((r) => r.text === trimmed)) {
+      const prefix = trimmed.slice(0, 30)
+      if (
+        recentSentRef.current.some(
+          (r) => r.text === trimmed || (prefix.length >= 15 && r.text.slice(0, 30) === prefix)
+        )
+      ) {
         logSessionEvent({
           module: 'SYS',
           model_name: 'dedup-guard',
