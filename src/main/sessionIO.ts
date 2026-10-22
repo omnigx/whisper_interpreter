@@ -1,4 +1,4 @@
-import { app, ipcMain, shell } from 'electron'
+import { app, ipcMain, powerMonitor, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import fsp from 'node:fs/promises'
 import fs from 'node:fs'
@@ -494,18 +494,46 @@ async function stopRecording(): Promise<{ ok: boolean; path?: string; error?: st
 /**
  * Closing the app mid-recording used to leave the temp WAV with a zero-length
  * header (data present but unreadable). Block quit until the file is finalized.
+ * ALSO: system sleep fires the same finalization — before-quit alone can't
+ * catch suspend (process is frozen, not quit), leaving orphaned .tmp_* files.
  */
 export function registerSessionQuitGuard(): void {
   let finalizing = false
-  app.on('before-quit', (event) => {
+  const finalizeNow = (event?: Electron.Event): void => {
     if (finalizing || !rec) return
     finalizing = true
-    event.preventDefault()
+    event?.preventDefault()
     void stopRecording()
       .catch(() => undefined)
       .finally(() => {
-        app.quit()
+        finalizing = false
+        if (event) app.quit() // only quit for app-quit; suspend just finalizes
       })
+  }
+
+  app.on('before-quit', (event) => finalizeNow(event))
+
+  // System suspend: finalize the WAV header + rename before the process freezes.
+  // On resume the recording is already safe on disk; user restarts listening.
+  powerMonitor.on('suspend', () => {
+    if (!rec) return
+    console.log('[session-io] system suspend — finalizing recording')
+    // suspend handler has ~2s before freeze; fire-and-forget the sync parts
+    try {
+      rec.stream.end()
+      // Patch header synchronously — this is the critical part
+      const fd = fs.openSync(rec.tempPath, 'r+')
+      fs.writeSync(fd, makeWavHeader(rec.dataBytes), 0)
+      fs.closeSync(fd)
+      // Rename synchronously to the final name
+      const finalName = `${rec.startStamp}_recording_sleep_safe.wav`
+      const finalPath = path.join(rec.outDir, finalName)
+      fs.renameSync(rec.tempPath, finalPath)
+      console.log(`[session-io] suspend-safe recording saved: ${finalName}`)
+      rec = null
+    } catch (e) {
+      console.error('[session-io] suspend finalization failed', e)
+    }
   })
 }
 
