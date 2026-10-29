@@ -641,6 +641,14 @@ export function useAudioPipeline(): {
             content: `result.lang=${JSON.stringify(result.lang ?? null)}`
           })
         }
+
+        // 语种：优先引擎自带 LID 标签；异常标签只标记不路由（语言对始终
+        // 由切换键主方向 + 字符启发式决定，标签错误不传染翻译方向）
+        const rawTag =
+          typeof result.lang === 'string' ? result.lang.trim().toLowerCase() : ''
+        const trustedTag = rawTag === 'zh' || rawTag === 'en' ? rawTag : null
+        const lowConf = rawTag !== '' && trustedTag === null
+        const lang = trustedTag ?? detectLanguage(text)
         // 15s 上限段的短尾并句：上限切断后 ≤5s 内出现的 ≤10 字 / ≤3s 短段，
         // 视为同一句的尾巴，并回前段重译（替换旧译文，转写行合并显示）
         if (capCutPendingRef.current) {
@@ -659,12 +667,19 @@ export function useAudioPipeline(): {
               ? ctx.text.replace(/[。！？!?.]+$/, '')
               : ctx.text
             const merged = prevBase + text
+            // 清除原段所有子条目（含 -s1/-s2 后缀），防合并条目与拆分子条目共存
+            useAppStore.setState((s) => ({
+              transcripts: s.transcripts.filter(
+                (t) => t.id !== ctx.sourceId && !t.id.startsWith(ctx.sourceId + '-')
+              )
+            }))
             upsertTranscript({
               id: ctx.sourceId,
               text: merged,
               isFinal: true,
               timestamp: Date.now(),
-              lang: detectLanguage(merged)
+              lang: detectLanguage(merged),
+              ...(rawTag ? { langTag: rawTag } : {})
             })
             const oldTr = useAppStore
               .getState()
@@ -689,12 +704,19 @@ export function useAudioPipeline(): {
             const rest = text.slice(head.length).trim()
             const prevText = ctx.text.replace(/[。！？!?.\s]+$/, '') // 去掉切断处的假句号
             const merged = prevText + head
+            // 清除原段所有子条目（含 -s1/-s2 后缀），防合并条目与拆分子条目共存
+            useAppStore.setState((s) => ({
+              transcripts: s.transcripts.filter(
+                (t) => t.id !== ctx.sourceId && !t.id.startsWith(ctx.sourceId + '-')
+              )
+            }))
             upsertTranscript({
               id: ctx.sourceId,
               text: merged,
               isFinal: true,
               timestamp: Date.now(),
-              lang: detectLanguage(merged)
+              lang: detectLanguage(merged),
+              ...(rawTag ? { langTag: rawTag } : {})
             })
             const oldTr = useAppStore
               .getState()
@@ -722,13 +744,7 @@ export function useAudioPipeline(): {
             capTailCtxRef.current = null
           }
         }
-        // 语种：优先引擎自带 LID 标签；异常标签只标记不路由（语言对始终
-        // 由切换键主方向 + 字符启发式决定，标签错误不传染翻译方向）
-        const rawTag =
-          typeof result.lang === 'string' ? result.lang.trim().toLowerCase() : ''
-        const trustedTag = rawTag === 'zh' || rawTag === 'en' ? rawTag : null
-        const lowConf = rawTag !== '' && trustedTag === null
-        const lang = trustedTag ?? detectLanguage(text)
+
         upsertTranscript({
           id: result.utteranceId,
           text,
@@ -765,19 +781,24 @@ export function useAudioPipeline(): {
             const { zh, en } = langSplit
             const zhId = `${result.utteranceId}-lz`
             const enId = `${result.utteranceId}-le`
+            useAppStore.setState((s) => ({
+              transcripts: s.transcripts.filter((t) => t.id !== result.utteranceId)
+            }))
             upsertTranscript({
               id: zhId,
               text: zh,
               isFinal: true,
               timestamp: Date.now(),
-              lang: 'zh'
+              lang: 'zh',
+              langTag: 'zh'
             })
             upsertTranscript({
               id: enId,
               text: en,
               isFinal: true,
               timestamp: Date.now(),
-              lang: 'en'
+              lang: 'en',
+              langTag: 'en'
             })
             runTranslate(zh, zhId, 'zh')
             runTranslate(en, enId, 'en')
@@ -805,19 +826,27 @@ export function useAudioPipeline(): {
           if (head.length >= 6 && rest.length >= 8) {
             const headId = `${result.utteranceId}-s1`
             const restId = `${result.utteranceId}-s2`
+            // 清除原段全文本条目（已被 -s1/-s2 拆分替代，防止界面重复显示）
+            useAppStore.setState((s) => ({
+              transcripts: s.transcripts.filter((t) => t.id !== result.utteranceId)
+            }))
             upsertTranscript({
               id: headId,
               text: head,
               isFinal: true,
               timestamp: Date.now(),
-              lang: detectLanguage(head)
+              lang: detectLanguage(head),
+              ...(rawTag ? { langTag: rawTag } : {}),
+              ...(lowConf ? { lowConfidence: true } : {})
             })
             upsertTranscript({
               id: restId,
               text: rest,
               isFinal: true,
               timestamp: Date.now(),
-              lang: detectLanguage(rest)
+              lang: detectLanguage(rest),
+              ...(rawTag ? { langTag: rawTag } : {}),
+              ...(lowConf ? { lowConfidence: true } : {})
             })
             runTranslate(head, headId, rawTag || undefined)
             runTranslate(rest, restId, rawTag || undefined)
