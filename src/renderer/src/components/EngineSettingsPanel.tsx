@@ -46,7 +46,7 @@ const PRESETS: Array<{ value: PipelineModePreset; label: string; desc: string }>
 ]
 
 /** Fallback options when Ollama /api/tags is unreachable */
-const OLLAMA_FALLBACK_MODELS = ['qwen3:4b-q4-tuned', 'qwen2.5:7b', 'qwen2.5:14b']
+const OLLAMA_FALLBACK_MODELS = ['qwen3:4b-q4-tuned', 'qwen3.6:35b-a3b-q4', 'qwen2.5:14b']
 
 interface EngineSettingsPanelProps {
   open: boolean
@@ -182,7 +182,7 @@ export function EngineSettingsPanel({
             setAvailableModels((prev) =>
               prev.length > 0 ? prev : [...OLLAMA_FALLBACK_MODELS]
             )
-            setModelsError('拉取超时，已显示常用模型 qwen3:4b-q4-tuned / qwen2.5:7b / 14b')
+            setModelsError('拉取超时，已显示常用模型 qwen3:4b-q4-tuned / qwen3.6:35b-a3b-q4 / 14b')
           }
           return
         }

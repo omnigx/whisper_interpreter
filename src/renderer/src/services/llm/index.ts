@@ -266,7 +266,7 @@ export async function listResidentOllamaModels(
 }
 
 /** Legacy fallback list when the live Ollama inventory is unavailable. */
-export const OLLAMA_FALLBACK_MODELS = ['qwen3:4b-q4-tuned', 'qwen2.5:7b', 'qwen2.5:14b']
+export const OLLAMA_FALLBACK_MODELS = ['qwen3:4b-q4-tuned', 'qwen3.6:35b-a3b-q4', 'qwen2.5:14b']
 
 /**
  * List locally installed Ollama models via GET /api/tags.
