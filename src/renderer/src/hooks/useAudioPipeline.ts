@@ -469,6 +469,13 @@ export function useAudioPipeline(): {
         return
       }
       recentSentRef.current.push({ text: trimmed, at: now })
+      // 排查日志：记录每次入队（去重通过后的最终关口），定位"丢失"请求
+      logSessionEvent({
+        module: 'SYS',
+        model_name: 'translate-enqueue',
+        content: `→ ${trimmed.slice(0, 40)} (${sourceId ?? 'no-id'})`,
+        reason: 'enqueue_trace'
+      })
       translateQueueRef.current.push({ unit, sourceId, langTag })
       void drainTranslateQueue()
     },
