@@ -62,7 +62,8 @@ function resolveModelsDir(engineRoot: string): string | undefined {
   const candidates = [
     process.env['STT_MODELS_DIR'],
     path.join(engineRoot, 'models'),
-    path.resolve(engineRoot, '..', 'python_dir', 'models')
+    path.resolve(engineRoot, '..', 'python_dir', 'models'),
+    'C:\Models' // 统一模型仓库（兜底）
   ].filter((p): p is string => Boolean(p))
   for (const c of candidates) {
     if (fs.existsSync(c)) return c

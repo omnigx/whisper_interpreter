@@ -19,7 +19,7 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 def _resolve_models_dir():
-    """模型目录解析：环境变量 STT_MODELS_DIR（Electron 启动器注入）→ 脚本同目录 models → 兄弟目录 python_dir/models"""
+    """模型目录解析：环境变量 STT_MODELS_DIR → 脚本同目录 models → 兄弟目录 python_dir/models → C:\Models"""
     env_dir = os.environ.get("STT_MODELS_DIR")
     if env_dir and os.path.isdir(env_dir):
         return env_dir
@@ -29,11 +29,17 @@ def _resolve_models_dir():
     sibling = os.path.normpath(os.path.join(BASE_DIR, "..", "python_dir", "models"))
     if os.path.isdir(sibling):
         return sibling
+    # C:\Models 统一模型仓库（兜底——python_dir/models 优先因当前 large-v3 在此）
+    cmodels = r"C:\Models"
+    if os.path.isdir(cmodels):
+        return cmodels
     return local
 
 MODELS_DIR = _resolve_models_dir()
 MODEL_PATHS = {
-    "medium": "medium",  # 若本地未预先下载，可直接拉取 huggingface 命名或指定为本地文件夹
+    # medium 在 CTranslate2 4.8.3 + 本机环境下产出乱码（语言误判为马来语），已废弃。
+    # 如需恢复，替换为可用的本地路径或 HuggingFace ID。
+    # "medium": "medium",
     "large-v3": os.path.join(MODELS_DIR, "faster-whisper-large-v3")
 }
 
