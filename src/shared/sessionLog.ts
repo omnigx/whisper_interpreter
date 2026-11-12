@@ -42,4 +42,10 @@ export interface SessionLogEntry {
   input_device?: string
   /** SYS session-start: pipeline capture rate (Chromium resamples internally) */
   sample_rate_hz?: number
+  /** speech-dict: matching mode snapshot ('off' | 'exact' | 'fuzzy') */
+  dict_mode?: string
+  /** speech-dict: entry count at the moment of the event */
+  dict_entries?: number
+  /** speech-dict: dictionary origin (loaded file name / 'default.json') */
+  dict_source?: string
 }

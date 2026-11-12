@@ -732,7 +732,8 @@ export function useAudioPipeline(): {
                 model_name: 'speech-dict',
                 content: corrections.map((c) => `${c.from}→${c.to}`).join(', '),
                 source_text: text.slice(0, 50),
-                reason: 'stt_dict_applied'
+                reason: 'stt_dict_applied',
+                dict_mode: dictMode
               })
               text = corrected
             }
@@ -1138,14 +1139,24 @@ export function useAudioPipeline(): {
               ? devicesRef.current.find((d) => d.deviceId === audio.deviceId)?.label ||
                 `device:${audio.deviceId.slice(0, 8)}`
               : 'system-default'
+      // 语音字典会话快照：是否启用/模式/条目数/来源（命中替换另见 stt_dict_applied）
+      const dictSnap = useAppStore.getState()
+      const dictEntries = Object.keys(dictSnap.speechDict).length
+      const dictLabel =
+        dictSnap.speechDictMode === 'off'
+          ? 'off'
+          : `${dictSnap.speechDictMode}(${dictEntries})`
       logSessionEvent({
         module: 'SYS',
         model_name: `${sttConfig.provider} + ${llmCfg?.model ?? 'none'}`,
-        content: `session start · VAD=${vad.engine}${isSyncRecordingActive() ? ' · sync-recording' : ''}`,
+        content: `session start · VAD=${vad.engine}${isSyncRecordingActive() ? ' · sync-recording' : ''} · dict=${dictLabel}`,
         vad_silence_ms: vadSilenceMs,
         max_sentence_ms: Math.round(audio.maxSentenceMs),
         input_device: inputDevice,
         sample_rate_hz: 16000,
+        dict_mode: dictSnap.speechDictMode,
+        dict_entries: dictEntries,
+        ...(dictSnap.speechDictSource ? { dict_source: dictSnap.speechDictSource } : {}),
         ...(getLastRecordingFile() ? { recording_file: getLastRecordingFile() } : {})
       })
       setPipelineStatus(

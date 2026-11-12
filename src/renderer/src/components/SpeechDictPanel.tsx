@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/appStore'
 import { parseDictInput, normalizeDictJson, type SpeechDictMode } from '../utils/speechDict'
 import { useClickOutside } from '../hooks/useClickOutside'
 import { useDrawerFreeze } from '../hooks/useDrawerFreeze'
+import { logSessionEvent } from '../services/sessionLogger'
 
 const MODE_LABELS: Record<SpeechDictMode, string> = {
   off: 'N/A (不启用)',
@@ -41,7 +42,7 @@ export function SpeechDictPanel({
       try {
         const result = await window.whisperApi?.readSpeechDict?.()
         const clean = normalizeDictJson(result)
-        if (Object.keys(clean).length > 0) setDict(clean)
+        if (Object.keys(clean).length > 0) setDict(clean, 'default.json')
       } catch { /* ignore */ }
     }
     void load()
@@ -64,7 +65,17 @@ export function SpeechDictPanel({
     reader.onload = () => {
       try {
         const clean = normalizeDictJson(JSON.parse(String(reader.result)))
-        if (Object.keys(clean).length > 0) setDict(clean)
+        if (Object.keys(clean).length > 0) {
+          setDict(clean, file.name)
+          logSessionEvent({
+            module: 'SYS',
+            model_name: 'speech-dict',
+            content: `loaded ${file.name} · ${Object.keys(clean).length} entries`,
+            reason: 'dict_loaded',
+            dict_source: file.name,
+            dict_entries: Object.keys(clean).length
+          })
+        }
       } catch { /* invalid JSON */ }
     }
     reader.readAsText(file)
@@ -102,7 +113,20 @@ export function SpeechDictPanel({
                   <button
                     key={m}
                     type="button"
-                    onClick={() => { setMode(m); setModeOpen(false) }}
+                    onClick={() => {
+                      setMode(m)
+                      setModeOpen(false)
+                      if (m !== dictMode) {
+                        logSessionEvent({
+                          module: 'SYS',
+                          model_name: 'speech-dict',
+                          content: `mode ${dictMode} → ${m}`,
+                          reason: 'dict_mode_change',
+                          dict_mode: m,
+                          dict_entries: Object.keys(useAppStore.getState().speechDict).length
+                        })
+                      }
+                    }}
                     className={`flex w-full items-center rounded px-2 py-1 text-left text-[10px] transition ${
                       dictMode === m
                         ? 'bg-[var(--accent-soft)] text-[var(--accent)]'

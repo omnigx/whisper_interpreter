@@ -49,7 +49,16 @@ export function logSessionEvent(
       ? { lang_tag: partial.lang_tag }
       : {}),
     ...(partial.low_confidence === true ? { low_confidence: true } : {}),
-    ...(partial.wrong_lang === true ? { wrong_lang: true } : {})
+    ...(partial.wrong_lang === true ? { wrong_lang: true } : {}),
+    ...(typeof partial.dict_mode === 'string' && partial.dict_mode
+      ? { dict_mode: partial.dict_mode }
+      : {}),
+    ...(typeof partial.dict_entries === 'number' && Number.isFinite(partial.dict_entries)
+      ? { dict_entries: partial.dict_entries }
+      : {}),
+    ...(typeof partial.dict_source === 'string' && partial.dict_source
+      ? { dict_source: partial.dict_source }
+      : {})
   }
   try {
     window.whisperApi?.appendSessionLog?.(entry)

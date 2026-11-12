@@ -62,10 +62,12 @@ interface AppState {
   speechDict: Record<string, string>
   /** STT dictionary matching mode */
   speechDictMode: 'off' | 'exact' | 'fuzzy'
+  /** Dictionary origin for session logs: loaded file name / persisted default */
+  speechDictSource: string | null
 
   setDisplay: (partial: Partial<DisplaySettings>) => void
   setOllamaModels: (models: string[]) => void
-  setSpeechDict: (entries: Record<string, string>) => void
+  setSpeechDict: (entries: Record<string, string>, source?: string | null) => void
   setSpeechDictMode: (mode: 'off' | 'exact' | 'fuzzy') => void
   addSpeechDictEntry: (from: string, to: string) => void
   removeSpeechDictEntry: (from: string) => void
@@ -131,6 +133,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   ollamaModels: [],
   speechDict: {},
   speechDictMode: 'exact',
+  speechDictSource: null,
   micSilent: false,
   sttEngineLaunching: false,
   debugMode: false,
@@ -141,7 +144,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       settings: { ...s.settings, display: { ...s.settings.display, ...partial } }
     })),
 
-  setSpeechDict: (entries) => set({ speechDict: entries }),
+  setSpeechDict: (entries, source) =>
+    set((s) => ({
+      speechDict: entries,
+      // source 显式传入才更新（undefined = 不动，如仅程序性重设条目）
+      ...(source !== undefined ? { speechDictSource: source } : {})
+    })),
   setSpeechDictMode: (mode) => set({ speechDictMode: mode }),
 
   addSpeechDictEntry: (from, to) =>

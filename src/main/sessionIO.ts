@@ -585,6 +585,15 @@ export function registerSessionIoIpc(): void {
         : {}),
       ...(typeof e.duration_ms === 'number' && Number.isFinite(e.duration_ms)
         ? { duration_ms: e.duration_ms }
+        : {}),
+      ...(typeof e.dict_mode === 'string' && e.dict_mode
+        ? { dict_mode: e.dict_mode }
+        : {}),
+      ...(typeof e.dict_entries === 'number' && Number.isFinite(e.dict_entries)
+        ? { dict_entries: e.dict_entries }
+        : {}),
+      ...(typeof e.dict_source === 'string' && e.dict_source
+        ? { dict_source: e.dict_source }
         : {})
     })
   })
