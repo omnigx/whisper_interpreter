@@ -441,6 +441,18 @@ export function useAudioPipeline(): {
   }, [activeLlmId, activeLlmModel, drainTranslateQueue, setPipelineStatus, upsertTranslation])
 
   // Keep enqueueTranslate → drain linked after drain exists
+  /** Remove dedup-cache entries sharing a prefix with the given text.
+   *  Called by cap-tail/cap-head re-sends so merged re-translations
+   *  are not blocked by the dedup guard (which would cause the old
+   *  translation to be removed but the new one never sent). */
+  const clearDedupForPrefix = (text: string): void => {
+    const prefix = text.trim().slice(0, 30)
+    if (prefix.length < 10) return
+    recentSentRef.current = recentSentRef.current.filter(
+      (r) => r.text.slice(0, 30) !== prefix
+    )
+  }
+
   const runTranslate = useCallback(
     (unit: string, sourceId?: string, langTag?: string) => {
       if (!unit.trim()) return
@@ -692,6 +704,7 @@ export function useAudioPipeline(): {
               .getState()
               .translations.find((t) => t.sourceId === ctx.sourceId)
             if (oldTr) removeTranslation(oldTr.id)
+            clearDedupForPrefix(ctx.text) // 免除合并重发被去重闸门误拦
             logSessionEvent({
               module: 'STT',
               model_name:
@@ -729,6 +742,7 @@ export function useAudioPipeline(): {
               .getState()
               .translations.find((t) => t.sourceId === ctx.sourceId)
             if (oldTr) removeTranslation(oldTr.id)
+            clearDedupForPrefix(ctx.text) // 免除合并重发被去重闸门误拦
             logSessionEvent({
               module: 'STT',
               model_name:
