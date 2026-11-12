@@ -63,9 +63,9 @@ body.subtitle-body {
   background: transparent !important;
 }
 
-/* 停靠变体：透明底让位 Win11 acrylic 材质（真透视由 DWM 材质提供，非 layered 窗口） */
+/* 停靠变体：不透明底（真透明与 DWM 吸附物理互斥，停靠窗定位为分屏实体窗） */
 body.subtitle-body.docked-body {
-  background: transparent !important;
+  background: var(--bg-deep) !important;
 }
 
 .panel-scroll {

@@ -617,6 +617,8 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
                 />
               </label>
 
+              {/* 背景不透明度仅悬浮窗适用（停靠窗不透明——真透明与吸附互斥） */}
+              {!docked && (
               <label className="mb-3 flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
                 背景不透明度 {prefs.backgroundOpacity}%
                 <input
@@ -630,6 +632,7 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
                   className="w-full accent-[var(--accent)]"
                 />
               </label>
+              )}
 
               <div className="mb-3 flex flex-col gap-1.5">
                 <span className="text-[10px] text-[var(--text-muted)]">
