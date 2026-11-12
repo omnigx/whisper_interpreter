@@ -4,7 +4,7 @@ import { parseDictInput, normalizeDictJson, type SpeechDictMode } from '../utils
 import { useClickOutside } from '../hooks/useClickOutside'
 
 const MODE_LABELS: Record<SpeechDictMode, string> = {
-  off: '不启用',
+  off: 'N/A (不启用)',
   exact: '全字匹配',
   fuzzy: '模糊匹配'
 }
