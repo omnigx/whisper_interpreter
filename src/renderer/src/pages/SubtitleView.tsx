@@ -446,25 +446,36 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
         </div>
       </div>
 
-      {/* 拖拽导航条 (沉浸式悬浮层) — DOM after content so it paints / hits above */}
-      <div
-        className={`absolute left-1/2 top-2 z-[9999] -translate-x-1/2 transition-opacity duration-300 ${
-          isLocked
-            ? 'hidden'
-            : `pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 ${
-                chromeForceVisible ? 'pointer-events-auto opacity-100' : ''
-              }`
-        }`}
-        title="拖动移动窗口"
-      >
+      {/* 拖动区。停靠窗：整条顶栏常驻可拖（拖动吸附是高频核心操作，小把手难找）；
+          悬浮窗：保留原沉浸式设计——顶部中央小胶囊把手，悬停淡入、锁定时隐藏 */}
+      {docked ? (
+        !isLocked && (
+          <div
+            className="absolute inset-x-0 top-0 z-40 h-8"
+            style={{ WebkitAppRegion: 'drag', cursor: 'move' }}
+            title="拖动窗口 / 拖到屏幕边缘吸附分屏"
+          />
+        )
+      ) : (
         <div
-          className="h-1.5 w-16 cursor-grab rounded-full bg-gray-500/50 transition-all hover:bg-gray-400 active:scale-110 active:cursor-grabbing active:bg-gray-200"
-          style={{
-            WebkitAppRegion: 'drag',
-            pointerEvents: 'auto'
-          }}
-        />
-      </div>
+          className={`absolute left-1/2 top-2 z-[9999] -translate-x-1/2 transition-opacity duration-300 ${
+            isLocked
+              ? 'hidden'
+              : `pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 ${
+                  chromeForceVisible ? 'pointer-events-auto opacity-100' : ''
+                }`
+          }`}
+          title="拖动移动窗口"
+        >
+          <div
+            className="h-1.5 w-16 cursor-grab rounded-full bg-gray-500/50 transition-all hover:bg-gray-400 active:scale-110 active:cursor-grabbing active:bg-gray-200"
+            style={{
+              WebkitAppRegion: 'drag',
+              pointerEvents: 'auto'
+            }}
+          />
+        </div>
+      )}
 
       {/* 右上角按钮组 (沉浸式悬浮层)。锁定时整窗鼠标穿越，但悬停本组可临时恢复交互 */}
       <div
