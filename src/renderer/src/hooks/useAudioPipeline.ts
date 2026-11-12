@@ -619,21 +619,32 @@ export function useAudioPipeline(): {
       }
       const handleProbeText = (text: string | null): void => {
         const t = (text ?? '').trim()
-        // 两句门槛（沿用策略B防误判思想，实测教训：单句号多为气口）：
-        // 出现第二个句末标点 = 说话人已进入下一句，第一处断点才可信。
-        // 另要求文本不以悬垂连接词+句号收尾。
-        const punctCount = (t.match(SENT_END_RE) || []).length
+        // 两句门槛，只数"内部句末标点"（其后仍有后续语音的）：
+        // SenseVoice 对截断音频会在末尾强打一个句号（尾标点伪影），
+        // 若把它计入则门槛退化为单句号即切（00:40 场"973计划"事故）。
+        // 内部 ≥2 个句末标点 = 前两句确已完结、话还在继续，断点才可信。
+        const ends = t.match(SENT_END_RE)
+        const interiorPuncts = ends ? ends.length - (/[。！？!?]$/.test(t) ? 1 : 0) : 0
         const eligible =
-          punctCount >= 2 && t.length >= 10 && !DANGLING_RE.test(t)
+          interiorPuncts >= 2 && t.length >= 10 && !DANGLING_RE.test(t)
         if (eligible) {
           const now = performance.now()
           if (punctCandAt === 0) punctCandAt = now
           else if (now - punctCandAt >= confirmWindowMs()) {
+            const confirmMs = Math.round(now - punctCandAt)
             punctCandAt = 0
             vadRef.current?.forceCut?.('punct')
+            // 切割诊断（每次切割一行）：验证滑块对确认窗口的实际作用
+            logSessionEvent({
+              module: 'SYS',
+              model_name: 'punct-cut',
+              content: `candidate age ${confirmMs}ms · slider=${useAppStore.getState().settings.audio.vadSilenceMs}ms · interior=${interiorPuncts} len=${t.length}`,
+              reason: 'punct_cut_diag',
+              vad_silence_ms: useAppStore.getState().settings.audio.vadSilenceMs
+            })
           }
         } else {
-          punctCandAt = 0 // 证据消失（幻觉/未稳定/悬垂）即重置
+          punctCandAt = 0 // 证据消失（幻觉/未稳定/悬垂/句数不足）即重置
         }
       }
       const scheduleProbeTick = (): void => {
