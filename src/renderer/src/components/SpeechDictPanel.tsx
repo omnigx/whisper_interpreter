@@ -63,7 +63,7 @@ export function SpeechDictPanel(): React.JSX.Element {
   }
 
   return (
-    <div className="flex min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* 头部：标题 + 匹配模式 + 加载（图标按钮） */}
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-2">
         <span className="text-xs font-medium uppercase tracking-wider text-[var(--source)]">语音字典</span>
