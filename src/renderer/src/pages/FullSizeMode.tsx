@@ -376,6 +376,7 @@ export function FullSizeMode({
 
       <main className="flex min-h-0 flex-1">
         <section className="flex w-1/2 min-w-0 flex-col border-r border-[var(--border)]">
+          <div className="flex min-h-0 flex-[0.7] flex-col">
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-2">
             <span className="text-xs font-medium uppercase tracking-wider text-[var(--source)]">
               源语言转写
@@ -399,7 +400,7 @@ export function FullSizeMode({
           </div>
           <div
             ref={sourceRef}
-            className="panel-scroll min-h-0 flex-[0.7] px-4 py-3"
+            className="panel-scroll min-h-0 flex-1 px-4 py-3"
             style={contentPanelStyle}
             title="Ctrl + 滚轮调节字号"
           >
@@ -445,6 +446,7 @@ export function FullSizeMode({
                 ) : null}
               </>
             )}
+          </div>
           </div>
 
           {/* 语音字典（与右侧专业术语对称） */}
