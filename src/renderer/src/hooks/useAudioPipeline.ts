@@ -21,7 +21,7 @@ import {
   directionLabel
 } from '../services/translationDirection'
 import { detectLanguage } from '../utils/detectLanguage'
-import { applySpeechDict } from '../utils/speechDict'
+import { applySpeechDict, applySpeechDictFuzzy } from '../utils/speechDict'
 
 /**
  * Detect a Chinese<->English sentence-level language switch inside one text.
@@ -658,9 +658,11 @@ export function useAudioPipeline(): {
         // 在所有管线处理（cap-tail/标点分句/语言边界/送翻）之前应用，
         // 确保转写区和 LLM 输入都使用纠错后的文本
         {
+          const dictMode = useAppStore.getState().speechDictMode
           const dict = useAppStore.getState().speechDict
-          if (dict && Object.keys(dict).length > 0) {
-            const { text: corrected, corrections } = applySpeechDict(text, dict)
+          if (dictMode !== 'off' && dict && Object.keys(dict).length > 0) {
+            const applyFn = dictMode === 'fuzzy' ? applySpeechDictFuzzy : applySpeechDict
+            const { text: corrected, corrections } = applyFn(text, dict)
             if (corrections.length > 0) {
               logSessionEvent({
                 module: 'SYS',

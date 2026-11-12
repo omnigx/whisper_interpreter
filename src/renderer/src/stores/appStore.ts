@@ -60,10 +60,13 @@ interface AppState {
   ollamaModels: string[]
   /** STT speech dictionary: from→to corrections applied post-STT */
   speechDict: Record<string, string>
+  /** STT dictionary matching mode */
+  speechDictMode: 'off' | 'exact' | 'fuzzy'
 
   setDisplay: (partial: Partial<DisplaySettings>) => void
   setOllamaModels: (models: string[]) => void
   setSpeechDict: (entries: Record<string, string>) => void
+  setSpeechDictMode: (mode: 'off' | 'exact' | 'fuzzy') => void
   addSpeechDictEntry: (from: string, to: string) => void
   removeSpeechDictEntry: (from: string) => void
   setMicSilent: (silent: boolean) => void
@@ -127,6 +130,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   windowMode: 'full',
   ollamaModels: [],
   speechDict: {},
+  speechDictMode: 'exact',
   micSilent: false,
   sttEngineLaunching: false,
   debugMode: false,
@@ -138,6 +142,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
 
   setSpeechDict: (entries) => set({ speechDict: entries }),
+  setSpeechDictMode: (mode) => set({ speechDictMode: mode }),
 
   addSpeechDictEntry: (from, to) =>
     set((s) => ({

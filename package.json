@@ -18,6 +18,7 @@
     "modern-ahocorasick": "^2.0.4",
     "onnxruntime-web": "^1.27.0",
     "papaparse": "^5.5.4",
+    "pinyin-pro": "^3.29.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zustand": "^5.0.14"
