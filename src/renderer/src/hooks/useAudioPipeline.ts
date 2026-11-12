@@ -22,6 +22,7 @@ import {
 } from '../services/translationDirection'
 import { detectLanguage } from '../utils/detectLanguage'
 import { applySpeechDict, applySpeechDictFuzzy } from '../utils/speechDict'
+import { stripDanglingPunct, endsDangling } from '../utils/punctHelpers'
 
 /**
  * Detect a Chinese<->English sentence-level language switch inside one text.
@@ -598,10 +599,6 @@ export function useAudioPipeline(): {
       // 更保守，一个旋钮一种语义）；探测间隔取 min(滑块值, 800ms) 防检测滞后。
       // 仅本地 utterance 引擎支持（probeUtterance 存在），其余引擎静默关闭。
       const SENT_END_RE = /[。！？!?]/g
-      // 悬垂连接词收尾＝气口断句而非语义完结（SenseVoice 按声学停顿打句号）：
-      // "并且。/当然。/所以说。" 这类尾巴说明话没说完，等后续语音越过再切
-      const DANGLING_RE =
-        /(?:并且|当然|所以说?|然后|但是|而且|因为|如果|虽然|就是|还有|或者|同时|接着|于是)[。！？!?]$/
       let punctCandAt = 0 // 首次见到可切证据的时刻；0 = 无候选
       let probeBusy = false
       let probeTimer: number | null = null
@@ -625,8 +622,9 @@ export function useAudioPipeline(): {
         // 内部 ≥2 个句末标点 = 前两句确已完结、话还在继续，断点才可信。
         const ends = t.match(SENT_END_RE)
         const interiorPuncts = ends ? ends.length - (/[。！？!?]$/.test(t) ? 1 : 0) : 0
+        // 句尾悬垂判据（词表与伪影清理共享，punctHelpers）
         const eligible =
-          interiorPuncts >= 2 && t.length >= 10 && !DANGLING_RE.test(t)
+          interiorPuncts >= 2 && t.length >= 10 && !endsDangling(t)
         if (eligible) {
           const now = performance.now()
           if (punctCandAt === 0) punctCandAt = now
@@ -760,6 +758,23 @@ export function useAudioPipeline(): {
               })
               text = corrected
             }
+          }
+        }
+        // ---- 句中伪影句号清理 ----
+        // SenseVoice 在气口（语义未完）处打句末标点："演变成。973计划"。
+        // 悬垂词紧邻句号 + 后续正文 = 伪影，删标点拼接（句尾标点保留）。
+        // 置于字典之后、分句/送翻之前，转写区与 LLM 输入同步受益。
+        {
+          const { text: cleaned, stripped } = stripDanglingPunct(text)
+          if (stripped.length > 0) {
+            logSessionEvent({
+              module: 'SYS',
+              model_name: 'punct-hygiene',
+              content: `stripped after: ${stripped.join('|')}`,
+              source_text: text.slice(0, 50),
+              reason: 'dangling_punct_strip'
+            })
+            text = cleaned
           }
         }
         if (langDiagCountRef.current < 3) {
