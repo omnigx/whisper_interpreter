@@ -23,6 +23,29 @@ export interface SenseVoiceUtteranceOptions {
 
 const DEFAULT_URL = 'ws://127.0.0.1:8765'
 
+/** 探测响应解析：JSON {text,lang} 或纯文本。无副作用（不触碰 pendingLang） */
+function decodeTranscriptText(data: unknown): string | null {
+  let raw = ''
+  if (typeof data === 'string') raw = data.trim()
+  else if (data instanceof ArrayBuffer) {
+    try {
+      raw = new TextDecoder().decode(data).trim()
+    } catch {
+      return null
+    }
+  }
+  if (!raw) return null
+  if (raw.startsWith('{')) {
+    try {
+      const msg = JSON.parse(raw) as { text?: string; transcript?: string }
+      return String(msg.text ?? msg.transcript ?? '').trim() || null
+    } catch {
+      return null
+    }
+  }
+  return raw
+}
+
 export class SenseVoiceUtteranceClient {
   private ws: WebSocket | null = null
   private url: string
@@ -37,6 +60,13 @@ export class SenseVoiceUtteranceClient {
   private samples = 0
   /** Engine LID tag captured from the latest JSON frame (null for plain text) */
   private pendingLang: string | null = null
+  // ---- 标点探测（punctuation probing）----
+  // 独立第二连接：探测响应与正式 final 天然隔离（老服务端也只会回 final
+  // 文本，本连接一律按探测处理），主路径零协议变更、零风险。
+  private probeWs: WebSocket | null = null
+  private probeGen = 0
+  private probeBusy = false
+  private lastFlushAt = 0
 
   constructor(opts: SenseVoiceUtteranceOptions = {}) {
     this.opts = opts
@@ -158,13 +188,9 @@ export class SenseVoiceUtteranceClient {
 
   flushUtterance(): void {
     if (this.samples === 0) return
-    const out = new Int16Array(this.samples)
-    let offset = 0
-    for (const chunk of this.buf) {
-      out.set(chunk, offset)
-      offset += chunk.length
-    }
+    const out = this.concatBuffer()
     this.clearBuffer()
+    this.lastFlushAt = performance.now()
     this.sendPcmInt16(out)
   }
 
@@ -173,11 +199,113 @@ export class SenseVoiceUtteranceClient {
     this.samples = 0
   }
 
+  /**
+   * 标点探测：把当前缓冲（自上次 flush 起的全部音频，即正式段将转写的
+   * 同一内容）重复送转写，但不清空缓冲、不走主连接。结果为探测文本，
+   * null = 本轮跳过（缓冲过短/过长、连接未就绪、刚 flush 过、超时）。
+   * 全程静默失败——探测是尽力而为的加速器，绝不能影响主路径。
+   */
+  probeUtterance(): Promise<string | null> {
+    // <0.8s 不够一个句子；>12s 即将撞 15s 上限，让兜底自然切，避免长缓冲
+    // 探测（~1s CPU）与正式段转写在服务端排队争抢
+    if (this.samples < 16000 * 0.8 || this.samples > 16000 * 12) {
+      return Promise.resolve(null)
+    }
+    // 刚 flush 过：服务端正在转写正式段
+    if (performance.now() - this.lastFlushAt < 1200) return Promise.resolve(null)
+    if (this.probeBusy) return Promise.resolve(null)
+    const ws = this.ensureProbeSocket()
+    if (!ws) return Promise.resolve(null)
+    const pcm = this.concatBuffer()
+    this.probeBusy = true
+    const gen = ++this.probeGen
+    return new Promise<string | null>((resolve) => {
+      let settled = false
+      const done = (v: string | null): void => {
+        if (settled || gen !== this.probeGen) return
+        settled = true
+        window.clearTimeout(timer)
+        ws.onmessage = null
+        resolve(v)
+      }
+      const timer = window.setTimeout(() => {
+        if (this.probeWs === ws) {
+          // 挂起的探测让位给下一次：丢弃这只可能失速的连接
+          this.detachProbe(ws)
+        }
+        done(null)
+      }, 3000)
+      ws.onclose = () => {
+        if (this.probeWs === ws) this.probeWs = null
+        done(null)
+      }
+      ws.onmessage = (ev) => done(decodeTranscriptText(ev.data))
+      try {
+        ws.send(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength))
+      } catch {
+        this.detachProbe(ws)
+        done(null)
+      }
+    }).finally(() => {
+      if (gen === this.probeGen) this.probeBusy = false
+    })
+  }
+
+  /** 探测连接懒建立；返回就绪的 socket，未就绪（刚发起连接）返回 null */
+  private ensureProbeSocket(): WebSocket | null {
+    const cur = this.probeWs
+    if (cur) {
+      if (cur.readyState === WebSocket.OPEN) return cur
+      if (cur.readyState === WebSocket.CONNECTING) return null
+      this.probeWs = null
+    }
+    try {
+      const ws = new WebSocket(this.url)
+      ws.binaryType = 'arraybuffer'
+      ws.onerror = () => undefined
+      ws.onclose = () => {
+        if (this.probeWs === ws) this.probeWs = null
+      }
+      this.probeWs = ws
+    } catch {
+      this.probeWs = null
+    }
+    return null
+  }
+
+  private detachProbe(ws: WebSocket): void {
+    ws.onclose = null
+    ws.onmessage = null
+    ws.onerror = null
+    if (this.probeWs === ws) this.probeWs = null
+    try {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close()
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private concatBuffer(): Int16Array {
+    const out = new Int16Array(this.samples)
+    let offset = 0
+    for (const chunk of this.buf) {
+      out.set(chunk, offset)
+      offset += chunk.length
+    }
+    return out
+  }
+
   disconnect(): void {
     this.connectGen += 1
     this.intentionalClose = true
     this.clearReconnect()
     this.clearBuffer()
+    // 探测连接一并拆除；进行中的探测静默作废（probeGen 已被新探测递增场景除外）
+    this.probeGen += 1
+    this.probeBusy = false
+    if (this.probeWs) this.detachProbe(this.probeWs)
     this.teardownSocket(false)
     this.opts.onStatus?.('disconnected')
   }

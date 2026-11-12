@@ -590,6 +590,63 @@ export function useAudioPipeline(): {
       // 就绪后回灌，开始听写后头几句不再丢失
       const preVadPackets: PcmPacket[] = []
       let vadAttached = false
+
+      // ---- 标点切句（第三切句信号，与静音/15s 顶并列）----
+      // 说话中周期性重复转写 STT 客户端当前缓冲（探测，不清空），出现句末
+      // 标点后再等滑块值重探测确认（防不完整音频的标点幻觉），确认即强制
+      // 早切。确认窗口复用"断句停顿"滑块值（快语速短确认更激进、慢速长确认
+      // 更保守，一个旋钮一种语义）；探测间隔取 min(滑块值, 800ms) 防检测滞后。
+      // 仅本地 utterance 引擎支持（probeUtterance 存在），其余引擎静默关闭。
+      const SENT_END_RE = /[。！？!?]/
+      let punctCandAt = 0 // 首次见到句末标点的时刻；0 = 无候选
+      let probeBusy = false
+      let probeTimer: number | null = null
+      let vadSpeaking = false
+      const probeIntervalMs = (): number =>
+        Math.min(800, Math.max(300, useAppStore.getState().settings.audio.vadSilenceMs))
+      const confirmWindowMs = (): number =>
+        Math.max(300, useAppStore.getState().settings.audio.vadSilenceMs)
+      const stopProbeLoop = (): void => {
+        if (probeTimer != null) {
+          window.clearTimeout(probeTimer)
+          probeTimer = null
+        }
+        punctCandAt = 0
+      }
+      const handleProbeText = (text: string | null): void => {
+        const t = (text ?? '').trim()
+        if (t.length >= 6 && SENT_END_RE.test(t)) {
+          const now = performance.now()
+          if (punctCandAt === 0) punctCandAt = now
+          else if (now - punctCandAt >= confirmWindowMs()) {
+            punctCandAt = 0
+            vadRef.current?.forceCut?.('punct')
+          }
+        } else {
+          punctCandAt = 0 // 标点消失（幻觉/未稳定）即重置
+        }
+      }
+      const scheduleProbeTick = (): void => {
+        if (probeTimer != null) return
+        const tick = (): void => {
+          probeTimer = null
+          if (!vadSpeaking) return
+          const stt = sttRef.current
+          if (stt?.probeUtterance && !probeBusy) {
+            probeBusy = true
+            stt
+              .probeUtterance()
+              .then(handleProbeText)
+              .catch(() => undefined)
+              .finally(() => {
+                probeBusy = false
+              })
+          }
+          if (vadSpeaking) probeTimer = window.setTimeout(tick, probeIntervalMs())
+        }
+        probeTimer = window.setTimeout(tick, probeIntervalMs())
+      }
+
       const vadPromise = createSileroVadAsync({
         maxSentenceMs: vadMaxMs,
         redemptionMs: vadSilenceMs,
@@ -615,7 +672,13 @@ export function useAudioPipeline(): {
               .join(',')}]`
           })
         },
+        onSpeakingChange: (sp) => {
+          vadSpeaking = sp
+          if (sp) scheduleProbeTick()
+          else stopProbeLoop()
+        },
         onSegment: (seg) => {
+          punctCandAt = 0 // 段已切出、缓冲清空，标点候选随之作废
           bumpVadSegment()
           const dur = Math.max(0, Math.round(seg.endMs - seg.startMs))
           const count = useAppStore.getState().vadSegmentCount

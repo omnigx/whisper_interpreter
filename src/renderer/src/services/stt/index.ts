@@ -26,6 +26,11 @@ export interface SttClient {
    * Paraformer → settle + "is_final"
    */
   notifyUtteranceEnd?: () => void
+  /**
+   * 标点探测（仅本地 utterance 引擎支持）：重复转写当前缓冲（不清空），
+   * 供标点切句调度器检查句末标点。null = 本轮跳过。缺失 = 引擎不支持。
+   */
+  probeUtterance?: () => Promise<string | null>
   /** Faster-Whisper medium ↔ large-v3 without closing the socket */
   switchFasterWhisperModel?: (model: FasterWhisperModelSize) => void
   configure?: (opts: { maxUtteranceMs?: number; silenceHoldMs?: number }) => void
@@ -171,6 +176,9 @@ function createSenseVoiceUtteranceSttClient(config: SttConfig): SttClient {
     },
     notifyUtteranceEnd() {
       client?.flushUtterance()
+    },
+    probeUtterance() {
+      return client ? client.probeUtterance() : Promise.resolve(null)
     }
   }
   return stt

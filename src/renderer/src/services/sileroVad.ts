@@ -16,6 +16,8 @@ export interface SileroVadOptions {
   onSegment?: (seg: VadSegment) => void
   onSpeechProb?: (p: number) => void
   onEngine?: (engine: VadEngine) => void
+  /** Speaking-state transitions — punctuation probing schedules off this */
+  onSpeakingChange?: (speaking: boolean) => void
   /** Watchdog fired when inference stalls — session is recreated automatically */
   onStall?: (info: { stallMs: number; lastProb: number; recentProbs: number[]; recoveries: number }) => void
 }
@@ -147,6 +149,12 @@ export async function createSileroVadAsync(
     let residualLen = 0
     const speechFrames: Float32Array[] = []
     let speaking = false
+    // 说话态翻转统一出口：标点探测调度依赖此回调启停
+    const setSpeaking = (v: boolean): void => {
+      if (speaking === v) return
+      speaking = v
+      options.onSpeakingChange?.(v)
+    }
     let speechStartMs = 0
     let silenceMs = 0
     let midBandMs = 0
@@ -183,7 +191,7 @@ export async function createSileroVadAsync(
       queue = Promise.resolve()
       clearMaxTimer()
       speechFrames.length = 0
-      speaking = false
+      setSpeaking(false)
       silenceMs = 0
       speechMs = 0
       void SileroV5Session.create(modelUrl)
@@ -218,7 +226,7 @@ export async function createSileroVadAsync(
       speechFrames.length = 0
       const now = performance.now()
       const wasSpeaking = speaking
-      speaking = false
+      setSpeaking(false)
       silenceMs = 0
       speechMs = 0
       clearMaxTimer()
@@ -257,7 +265,7 @@ export async function createSileroVadAsync(
 
           if (prob >= positive) {
             if (!speaking) {
-              speaking = true
+              setSpeaking(true)
               speechStartMs = performance.now()
               speechMs = 0
               silenceMs = 0
@@ -279,7 +287,7 @@ export async function createSileroVadAsync(
                 if (speechMs >= minSpeechMs) emit('silence')
                 else {
                   speechFrames.length = 0
-                  speaking = false
+                  setSpeaking(false)
                   silenceMs = 0
                   speechMs = 0
                   clearMaxTimer()
@@ -294,7 +302,7 @@ export async function createSileroVadAsync(
                 if (speechMs >= minSpeechMs) emit('silence')
                 else {
                   speechFrames.length = 0
-                  speaking = false
+                  setSpeaking(false)
                   silenceMs = 0
                   speechMs = 0
                   clearMaxTimer()
@@ -346,11 +354,15 @@ export async function createSileroVadAsync(
       setOnSegment(cb) {
         onSegment = cb
       },
+      forceCut(reason) {
+        // 标点确认后的外部早切：只执行切段，"何时切"由探测调度器决定
+        if (speaking && speechMs >= minSpeechMs) emit(reason)
+      },
       reset() {
         clearMaxTimer()
         residualLen = 0
         speechFrames.length = 0
-        speaking = false
+        setSpeaking(false)
         silenceMs = 0
         speechMs = 0
         model.reset()

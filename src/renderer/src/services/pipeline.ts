@@ -51,7 +51,7 @@ export interface VadSegment {
   startMs: number
   endMs: number
   pcm: Int16Array
-  reason: 'silence' | 'max-sentence' | 'manual'
+  reason: 'silence' | 'max-sentence' | 'manual' | 'punct'
 }
 
 export interface SttPartialResult {
@@ -68,6 +68,12 @@ export interface SileroVadHandle {
   /** Live-adjust the silence-hold that ends a sentence (ms) */
   setRedemptionMs?: (ms: number) => void
   setOnSegment?: (cb: (seg: VadSegment) => void) => void
+  /**
+   * External early cut (punctuation-driven): emit the current speech buffer
+   * immediately if speaking. No-op when idle — punctuation probing owns the
+   * decision of WHEN, this only executes the cut.
+   */
+  forceCut?: (reason: VadSegment['reason']) => void
   reset: () => void
   dispose?: () => void
 }
