@@ -149,6 +149,7 @@ export async function createSileroVadAsync(
     let speaking = false
     let speechStartMs = 0
     let silenceMs = 0
+    let midBandMs = 0
     let speechMs = 0
     let queue: Promise<void> = Promise.resolve()
     let maxTimer: ReturnType<typeof setTimeout> | null = null
@@ -272,6 +273,7 @@ export async function createSileroVadAsync(
           if (speaking) {
             speechFrames.push(frame)
             if (prob < negative) {
+              midBandMs = 0
               silenceMs += frameMs
               if (silenceMs >= redemptionMs) {
                 if (speechMs >= minSpeechMs) emit('silence')
@@ -283,9 +285,24 @@ export async function createSileroVadAsync(
                   clearMaxTimer()
                 }
               }
+            } else if (prob < positive) {
+              // mid-band: 静音不累计。连续 ≥3s 无确认语音 = 说话人已停
+              midBandMs += frameMs
+              silenceMs = 0
+              if (midBandMs >= 3000) {
+                midBandMs = 0
+                if (speechMs >= minSpeechMs) emit('silence')
+                else {
+                  speechFrames.length = 0
+                  speaking = false
+                  silenceMs = 0
+                  speechMs = 0
+                  clearMaxTimer()
+                }
+              }
+            } else {
+              midBandMs = 0
             }
-            // mid-band [negative, positive): hold — 静音既不累计也不清零；
-            // 15s maxTimer 兜底真正的无限拖尾
           }
         })
         .catch((err) => {
