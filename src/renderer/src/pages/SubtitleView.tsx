@@ -105,6 +105,15 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+/** 停靠窗（不透明窗口）背景混合：bgHex 按 opacity 混向窗口底色 base。
+ *  视觉等效悬浮窗的半透明背景——文字层独立，不受影响。 */
+function mixHex(a: string, b: string, t: number): string {
+  const ch = (i: number): number =>
+    Math.round(parseInt(a.slice(i, i + 2), 16) * t + parseInt(b.slice(i, i + 2), 16) * (1 - t))
+  const h = (n: number): string => n.toString(16).padStart(2, '0')
+  return `#${h(ch(1))}${h(ch(3))}${h(ch(5))}`
+}
+
 function loadPrefs(): SubtitleLocalPrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -174,6 +183,8 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [isLocked, setIsLocked] = useState(false)
+  /** 停靠窗锁定失败的可见提示（未吸附），数秒后消失 */
+  const [lockHint, setLockHint] = useState(false)
   const [prefs, setPrefs] = useState<SubtitleLocalPrefs>(loadPrefs)
 
   const sourceScrollRef = useRef<HTMLDivElement>(null)
@@ -198,12 +209,17 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
   }, [prefs])
 
   // Lock = fixed geometry + mouse click-through (see windows.ts)。
-  // 停靠变体走 docked 通道：仅吸附态可锁（主进程几何判定），失败回弹解锁态。
+  // 停靠变体走 docked 通道：仅吸附态可锁（主进程几何判定），失败回弹解锁态
+  // 并弹出可见提示（此前静默回弹，用户感知为"按钮失效"）。
   useEffect(() => {
     if (!isLocked) hotspotActiveRef.current = false
     if (docked) {
       void window.whisperApi?.setDockedLocked?.(isLocked).then((ok) => {
-        if (isLocked && ok === false) setIsLocked(false)
+        if (isLocked && ok === false) {
+          setIsLocked(false)
+          setLockHint(true)
+          window.setTimeout(() => setLockHint(false), 2600)
+        }
       })
     } else {
       window.whisperApi?.setSubtitleLocked?.(isLocked)
@@ -341,6 +357,15 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
   const isColumnPosition =
     prefs.position === 'left-column' || prefs.position === 'right-column'
 
+  // 停靠窗为不透明窗口（DWM 吸附资格）：半透明背景改为按 opacity 混向
+  // 窗口底色（--bg-deep）的实色——调节效果与悬浮窗同感官，文字层不受影响
+  const dockedBase = (
+    getComputedStyle(document.body).getPropertyValue('--bg-deep') || '#0f1419'
+  ).trim()
+  const rootBg = docked
+    ? mixHex(bgHex, dockedBase, prefs.backgroundOpacity / 100)
+    : hexToRgba(bgHex, prefs.backgroundOpacity / 100)
+
   return (
     <div
       className="lyric-window group relative flex h-screen w-full select-none flex-col overflow-hidden"
@@ -348,7 +373,7 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        backgroundColor: hexToRgba(bgHex, prefs.backgroundOpacity / 100)
+        backgroundColor: rootBg
       }}
     >
       {/* Full-bleed content — no top padding; overlays may cover text */}
@@ -540,6 +565,13 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
         >
           <LockIcon locked={isLocked} />
         </button>
+
+        {/* 停靠窗锁定失败提示（未吸附） */}
+        {docked && lockHint && (
+          <span className="pointer-events-none whitespace-nowrap rounded border border-amber-500/50 bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-200">
+            需先吸附分屏（Win+方向键 / 拖到屏幕边缘）
+          </span>
+        )}
 
         <div
           ref={settingsRootRef}
