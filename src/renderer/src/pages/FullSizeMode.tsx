@@ -662,9 +662,10 @@ export function FullSizeMode({
               </div>
             </div>
             {/* 内容区：分栏独立 flex 项，收起时 grow 归零 + 0fr 双重收合（TermsPanel 保持挂载，滚动位置不丢）。
-                overflow-hidden 在容器上：收起时内容高度冻结 + 底端锚定，窗口上缘向下扫过从顶部吞没。 */}
+                overflow-hidden 在容器上 + content-end 让溢出轨道锚定容器底部：冻结的内容全程静止，
+                窗口上缘下扫时从顶部吞没，上扫时从顶部显现。 */}
             <div
-              className={`grid min-h-0 overflow-hidden transition-[grid-template-rows,flex-grow] duration-200 ease-in-out ${
+              className={`grid min-h-0 content-end overflow-hidden transition-[grid-template-rows,flex-grow] duration-200 ease-in-out ${
                 termsCollapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
               }`}
               style={{ gridTemplateRows: termsCollapsed ? '0fr' : '1fr' }}
@@ -672,7 +673,7 @@ export function FullSizeMode({
               <div
                 ref={termsDrawerRef}
                 className={`flex min-h-0 flex-col transition-opacity duration-150 ${
-                  termsCollapsed ? 'self-end opacity-0' : 'opacity-100'
+                  termsCollapsed ? 'opacity-0' : 'opacity-100'
                 }`}
               >
                 <TermsPanel
