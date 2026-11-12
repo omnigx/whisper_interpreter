@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, screen, session } from 'electron'
+import { execFile } from 'child_process'
 import { join } from 'path'
 import {
   isSubtitleHeightPreset,
@@ -274,6 +275,55 @@ export function isSubtitleWindowOpen(): boolean {
 let dockedWindow: BrowserWindow | null = null
 let dockedLocked = false
 
+/**
+ * 停靠窗"玻璃"背景：composition API 的 ACCENT_ENABLE_TRANSPARENTGRADIENT——
+ * 无模糊的系统级实时半透明（区别于 acrylic 材质的模糊透视）。非 layered
+ * 窗口路径，DWM 吸附资格保留。Electron 未封装该 API，经 PowerShell P/Invoke
+ * 单次调用（零新依赖；TranslucentTB 等工具同款路线，未公开但十余年稳定）。
+ * 失败静默——窗口退回 backgroundColor 全透明底（rgba 内容层仍完整覆盖）。
+ */
+const ACCENT_PS = `
+using System;
+using System.Runtime.InteropServices;
+public static class Accent {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct ACCENTPOLICY { public int State; public uint Flags; public uint Color; public uint Animation; }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct WINCOMPATTRDATA { public int Attribute; public IntPtr Data; public int Size; }
+  [DllImport("user32.dll")]
+  public static extern bool SetWindowCompositionAttribute(IntPtr hwnd, ref WINCOMPATTRDATA data);
+  public static void Apply(IntPtr hwnd) {
+    var pol = new ACCENTPOLICY { State = 3, Flags = 2, Color = 0x00000000, Animation = 0 };
+    var dat = new WINCOMPATTRDATA {
+      Attribute = 19,
+      Data = Marshal.AllocHGlobal(Marshal.SizeOf(pol)),
+      Size = Marshal.SizeOf(pol)
+    };
+    Marshal.StructureToPtr(pol, dat.Data, false);
+    SetWindowCompositionAttribute(hwnd, ref dat);
+    Marshal.FreeHGlobal(dat.Data);
+  }
+}`
+
+function applyDockedGlassAccent(win: BrowserWindow): void {
+  try {
+    const hwndBuf = win.getNativeWindowHandle()
+    const hwnd = process.arch === 'x64' ? hwndBuf.readBigUInt64LE(0) : BigInt(hwndBuf.readUInt32LE(0))
+    // Add-Type 编译 + 单次调用；约 1-2s 后台完成，不阻塞窗口显示
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command',
+       `Add-Type -TypeDefinition '${ACCENT_PS.replace(/'/g, "''")}'; [Accent]::Apply([IntPtr]::new(${hwnd}))`],
+      { windowsHide: true, timeout: 15000 },
+      (err) => {
+        if (err) console.warn('[docked] glass accent failed (fallback to plain bg):', err.message)
+      }
+    )
+  } catch (e) {
+    console.warn('[docked] glass accent setup failed:', e)
+  }
+}
+
 /** 悬浮字幕窗是否占着中下位（几何判定而非 preset——窗口可被自由拖动） */
 function isSubtitleOccupyingBottomCenter(): boolean {
   if (!subtitleWindow || subtitleWindow.isDestroyed()) return false
@@ -364,13 +414,10 @@ export function createDockedWindow(): BrowserWindow {
   // 停靠窗无需跨工作区常显（参与 DWM 分屏，由窗口管理器接管层级）
   dockedWindow.setVisibleOnAllWorkspaces(false)
 
-  // Win11 DWM 材质背景：acrylic 半透明不经过 layered 窗口（不牺牲吸附资格），
-  // 渲染层的 rgba 背景叠在材质上＝真透视+文字不透明。失败（旧系统/驱动）静默降级为不透明。
-  try {
-    dockedWindow.setBackgroundMaterial?.('acrylic')
-  } catch {
-    /* material unsupported — fall back to opaque */
-  }
+  // Win11 DWM 材质背景已弃用（acrylic 自带模糊，用户要无模糊纯透明）——
+  // 改用 composition API 的 TRANSPARENTGRADIENT（见 applyDockedGlassAccent）。
+
+  applyDockedGlassAccent(dockedWindow)
 
   dockedWindow.on('ready-to-show', () => {
     dockedWindow?.show()
