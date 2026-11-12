@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../stores/appStore'
-import { parseDictInput, type SpeechDictMode } from '../utils/speechDict'
+import { parseDictInput, normalizeDictJson, type SpeechDictMode } from '../utils/speechDict'
 import { useClickOutside } from '../hooks/useClickOutside'
 
 const MODE_LABELS: Record<SpeechDictMode, string> = {
@@ -32,12 +32,8 @@ export function SpeechDictPanel(): React.JSX.Element {
     const load = async (): Promise<void> => {
       try {
         const result = await window.whisperApi?.readSpeechDict?.()
-        if (result && typeof result === 'object' && !Array.isArray(result)) {
-          const clean = Object.fromEntries(
-            Object.entries(result).filter(([, v]) => typeof v === 'string')
-          )
-          if (Object.keys(clean).length > 0) setDict(clean)
-        }
+        const clean = normalizeDictJson(result)
+        if (Object.keys(clean).length > 0) setDict(clean)
       } catch { /* ignore */ }
     }
     void load()
@@ -51,14 +47,16 @@ export function SpeechDictPanel(): React.JSX.Element {
     if (parsed) { addEntry(parsed.from, parsed.to); setInput('') }
   }
 
+  /** 安全导入：支持 object（原词→纠正 或 术语→术语）与 array（仅术语）两种格式，
+   *  混合格式自然兼容；无效/超限 JSON 静默跳过，不崩溃（详见 normalizeDictJson）。 */
   const handleFilePick = (file: File): void => {
+    if (file.size > 1_048_576) return // 1MB 上限
     const reader = new FileReader()
+    reader.onerror = () => undefined
     reader.onload = () => {
       try {
-        const json = JSON.parse(String(reader.result))
-        if (json && typeof json === 'object' && !Array.isArray(json)) {
-          setDict(json as Record<string, string>)
-        }
+        const clean = normalizeDictJson(JSON.parse(String(reader.result)))
+        if (Object.keys(clean).length > 0) setDict(clean)
       } catch { /* invalid JSON */ }
     }
     reader.readAsText(file)

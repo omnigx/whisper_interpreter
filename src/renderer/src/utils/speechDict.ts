@@ -19,6 +19,38 @@ export function parseDictInput(raw: string): { from: string; to: string } | null
   return { from, to }
 }
 
+/** Max entries / lengths accepted when importing a JSON dictionary file */
+export const MAX_DICT_ENTRIES = 500
+export const MAX_TERM_LEN = 30
+
+/**
+ * Normalize a parsed JSON payload into a clean dict. Accepts:
+ *  - object: { "原词": "纠正词" } or self-map { "术语": "术语" } (target-word form for fuzzy mode)
+ *  - array:  ["术语", ...] → self-map entries
+ * Mixed formats merge naturally: key=value is a no-op in exact mode and the
+ * target-word form in fuzzy mode. Malformed input yields {} — never throws.
+ * Defense: strings only, trimmed, key ≥ MIN_FROM_LEN (single char over-corrects
+ * in fuzzy mode), each side ≤ MAX_TERM_LEN, ≤ MAX_DICT_ENTRIES entries.
+ */
+export function normalizeDictJson(parsed: unknown): Record<string, string> {
+  const raw: Array<[string, unknown]> = Array.isArray(parsed)
+    ? parsed.map((v): [string, unknown] => [typeof v === 'string' ? v : '', v])
+    : parsed && typeof parsed === 'object'
+      ? Object.entries(parsed as Record<string, unknown>)
+      : []
+  const clean: Record<string, string> = {}
+  for (const [k, v] of raw) {
+    if (Object.keys(clean).length >= MAX_DICT_ENTRIES) break
+    const key = k.trim()
+    const val = typeof v === 'string' ? v.trim() : ''
+    if (!key || !val) continue
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue // 原型污染防御
+    if (key.length < MIN_FROM_LEN || key.length > MAX_TERM_LEN || val.length > MAX_TERM_LEN) continue
+    clean[key] = val
+  }
+  return clean
+}
+
 /** Exact substring replacement */
 export function applySpeechDict(
   text: string,
