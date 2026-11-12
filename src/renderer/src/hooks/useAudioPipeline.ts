@@ -597,8 +597,12 @@ export function useAudioPipeline(): {
       // 早切。确认窗口复用"断句停顿"滑块值（快语速短确认更激进、慢速长确认
       // 更保守，一个旋钮一种语义）；探测间隔取 min(滑块值, 800ms) 防检测滞后。
       // 仅本地 utterance 引擎支持（probeUtterance 存在），其余引擎静默关闭。
-      const SENT_END_RE = /[。！？!?]/
-      let punctCandAt = 0 // 首次见到句末标点的时刻；0 = 无候选
+      const SENT_END_RE = /[。！？!?]/g
+      // 悬垂连接词收尾＝气口断句而非语义完结（SenseVoice 按声学停顿打句号）：
+      // "并且。/当然。/所以说。" 这类尾巴说明话没说完，等后续语音越过再切
+      const DANGLING_RE =
+        /(?:并且|当然|所以说?|然后|但是|而且|因为|如果|虽然|就是|还有|或者|同时|接着|于是)[。！？!?]$/
+      let punctCandAt = 0 // 首次见到可切证据的时刻；0 = 无候选
       let probeBusy = false
       let probeTimer: number | null = null
       let vadSpeaking = false
@@ -615,7 +619,13 @@ export function useAudioPipeline(): {
       }
       const handleProbeText = (text: string | null): void => {
         const t = (text ?? '').trim()
-        if (t.length >= 6 && SENT_END_RE.test(t)) {
+        // 两句门槛（沿用策略B防误判思想，实测教训：单句号多为气口）：
+        // 出现第二个句末标点 = 说话人已进入下一句，第一处断点才可信。
+        // 另要求文本不以悬垂连接词+句号收尾。
+        const punctCount = (t.match(SENT_END_RE) || []).length
+        const eligible =
+          punctCount >= 2 && t.length >= 10 && !DANGLING_RE.test(t)
+        if (eligible) {
           const now = performance.now()
           if (punctCandAt === 0) punctCandAt = now
           else if (now - punctCandAt >= confirmWindowMs()) {
@@ -623,7 +633,7 @@ export function useAudioPipeline(): {
             vadRef.current?.forceCut?.('punct')
           }
         } else {
-          punctCandAt = 0 // 标点消失（幻觉/未稳定）即重置
+          punctCandAt = 0 // 证据消失（幻觉/未稳定/悬垂）即重置
         }
       }
       const scheduleProbeTick = (): void => {
@@ -701,8 +711,10 @@ export function useAudioPipeline(): {
           // Arm STT latency measurement (flush → final text)
           sttFlushAtRef.current = performance.now()
           sttSegDurRef.current = dur
-          // 15s 上限切断的句子，其后继短尾可并回（见 onResult 合并逻辑）
-          capCutPendingRef.current = seg.reason === 'max-sentence'
+          // 15s 上限切断/punct 切断的句子，其后继短尾可并回（见 onResult 合并逻辑）。
+          // punct 段后 ≤10 字短尾 = 上一段末尾短语的延续（实测碎片主因之一）
+          capCutPendingRef.current =
+            seg.reason === 'max-sentence' || seg.reason === 'punct'
           sttRef.current?.notifyUtteranceEnd?.()
         }
       })

@@ -153,7 +153,7 @@ export function AudioControlPanel({
             value={audio.vadSilenceMs / 1000}
             onChange={(e) => onSilence(Number(e.target.value) * 1000)}
             className="w-full accent-[var(--accent)]"
-            title="静音达到该时长即断句送译：快语速讲者 0.4–0.6s；一般 0.7–0.9s；非母语/慢速 1.0–1.5s。同一数值也用作标点切句的确认窗口（句末标点出现后经此时长复检仍存在即提前切段）。对整句(SenseVoice/FW)与流式(Paraformer)同时生效。"
+            title="静音达到该时长即断句送译：快语速讲者 0.4–0.6s；一般 0.7–0.9s；非母语/慢速 1.0–1.5s。同一数值也用作标点切句的确认窗口（连说话中出现两个句末标点后，经此时长复检仍成立即提前切段）。对整句(SenseVoice/FW)与流式(Paraformer)同时生效。"
           />
         </div>
 
