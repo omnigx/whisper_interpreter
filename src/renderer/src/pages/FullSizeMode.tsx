@@ -51,6 +51,7 @@ export function FullSizeMode({
   onToggleSubtitle
 }: FullSizeModeProps): React.JSX.Element {
   const transcripts = useAppStore((s) => s.transcripts)
+  const termsCount = useAppStore((s) => s.terms.length)
   const partialText = useAppStore((s) => s.partialText)
   const translations = useAppStore((s) => s.translations)
   const isListening = useAppStore((s) => s.isListening)
@@ -69,6 +70,9 @@ export function FullSizeMode({
 
   const [engineOpen, setEngineOpen] = useState(false)
   const [showDictationTest, setShowDictationTest] = useState(false)
+  // 抽屉收合：左右下方面板独立控制，启动默认展开（不持久化）
+  const [dictCollapsed, setDictCollapsed] = useState(false)
+  const [termsCollapsed, setTermsCollapsed] = useState(false)
 
   const {
     devices,
@@ -449,9 +453,16 @@ export function FullSizeMode({
           </div>
           </div>
 
-          {/* 语音字典（与右侧专业术语对称） */}
-          <div className="flex min-h-0 flex-[0.3] flex-col border-t border-[var(--border)]">
-            <SpeechDictPanel />
+          {/* 语音字典（与右侧专业术语对称）；收起时容器释放 30% 份额，标题栏贴底成抽屉把手 */}
+          <div
+            className={`flex flex-col border-t border-[var(--border)] transition-[flex-grow] duration-200 ease-in-out ${
+              dictCollapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
+            }`}
+          >
+            <SpeechDictPanel
+              collapsed={dictCollapsed}
+              onToggle={() => setDictCollapsed((v) => !v)}
+            />
           </div>
         </section>
 
@@ -570,11 +581,17 @@ export function FullSizeMode({
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-[0.3] flex-col">
+          {/* 专业术语：收起时容器释放 30% 份额，标题栏贴底成抽屉把手 */}
+          <div
+            className={`flex flex-col transition-[flex-grow] duration-200 ease-in-out ${
+              termsCollapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
+            }`}
+          >
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-2">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-[var(--term)]">
                   专业术语（异步）
+                  {termsCollapsed && termsCount > 0 ? ` · ${termsCount}` : ''}
                 </span>
                 {glossaryCount > 0 ? (
                   <span className="truncate text-[10px] text-[var(--text-muted)]">
@@ -588,6 +605,15 @@ export function FullSizeMode({
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-label={termsCollapsed ? '展开专业术语' : '收起专业术语'}
+                  title={termsCollapsed ? '展开专业术语' : '收起专业术语'}
+                  onClick={() => setTermsCollapsed((v) => !v)}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-[var(--border)] text-[var(--text-muted)] transition hover:border-[var(--term)] hover:text-[var(--term)]"
+                >
+                  <ChevronIcon up={termsCollapsed} />
+                </button>
                 <button
                   type="button"
                   title={
@@ -634,12 +660,24 @@ export function FullSizeMode({
                 />
               </div>
             </div>
-            <TermsPanel
-              scrollRef={termsRef}
-              contentPanelStyle={contentPanelStyle}
-              foreignTextStyle={foreignTermStyle}
-              chineseTextStyle={chineseTermStyle}
-            />
+            {/* 内容区：0fr↔1fr 抽屉收合动画（TermsPanel 保持挂载，滚动位置不丢） */}
+            <div
+              className="grid min-h-0 flex-1 transition-[grid-template-rows] duration-200 ease-in-out"
+              style={{ gridTemplateRows: termsCollapsed ? '0fr' : '1fr' }}
+            >
+              <div
+                className={`flex min-h-0 flex-col overflow-hidden transition-opacity duration-150 ${
+                  termsCollapsed ? 'opacity-0' : 'opacity-100'
+                }`}
+              >
+                <TermsPanel
+                  scrollRef={termsRef}
+                  contentPanelStyle={contentPanelStyle}
+                  foreignTextStyle={foreignTermStyle}
+                  chineseTextStyle={chineseTermStyle}
+                />
+              </div>
+            </div>
           </div>
         </section>
       </main>
@@ -656,6 +694,25 @@ export function FullSizeMode({
 
 function EmptyHint({ text }: { text: string }): React.JSX.Element {
   return <p className="text-sm text-[var(--text-muted)]/70">{text}</p>
+}
+
+/** 抽屉收合箭头：展开时朝下（点击收起），收起时朝上（点击展开） */
+function ChevronIcon({ up }: { up: boolean }): React.JSX.Element {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {up ? <path d="m18 15-6-6-6 6" /> : <path d="m6 9 6 6 6-6" />}
+    </svg>
+  )
 }
 
 function CsvImportIcon(): React.JSX.Element {
