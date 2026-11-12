@@ -21,7 +21,7 @@ import {
   directionLabel
 } from '../services/translationDirection'
 import { detectLanguage } from '../utils/detectLanguage'
-import { applySpeechDict } from '../components/SpeechDictPanel'
+import { applySpeechDict } from '../utils/speechDict'
 
 /**
  * Detect a Chinese<->English sentence-level language switch inside one text.

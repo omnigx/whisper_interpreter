@@ -10,36 +10,7 @@ import { useAppStore } from '../stores/appStore'
  * 持久化：terms/stt_dict/default.json，启动时自动加载。
  */
 
-const SEPARATORS = /[,;；:：=＝]/
-const MIN_FROM_LEN = 2
-
-/** 解析快速添加输入，返回 {from, to} 或 null */
-export function parseDictInput(raw: string): { from: string; to: string } | null {
-  const parts = raw.trim().split(SEPARATORS)
-  if (parts.length < 2) return null
-  const from = parts[0].trim()
-  const to = parts.slice(1).join('').trim()
-  if (!from || !to) return null
-  if (from.length < MIN_FROM_LEN) return null
-  return { from, to }
-}
-
-/** 对文本应用语音字典纠错 */
-export function applySpeechDict(
-  text: string,
-  entries: Record<string, string>
-): { text: string; corrections: Array<{ from: string; to: string }> } {
-  if (!entries || Object.keys(entries).length === 0) return { text, corrections: [] }
-  let result = text
-  const corrections: Array<{ from: string; to: string }> = []
-  for (const [from, to] of Object.entries(entries)) {
-    if (result.includes(from)) {
-      result = result.split(from).join(to)
-      corrections.push({ from, to })
-    }
-  }
-  return { text: result, corrections }
-}
+import { parseDictInput, MIN_FROM_LEN } from '../utils/speechDict'
 
 export function SpeechDictPanel(): React.JSX.Element {
   const dict = useAppStore((s) => s.speechDict)
