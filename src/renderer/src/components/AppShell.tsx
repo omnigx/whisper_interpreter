@@ -50,7 +50,8 @@ function SubtitleSatelliteApp(): React.JSX.Element {
   }, [docked])
 
   return (
-    <div className={`h-full w-full ${docked ? 'bg-[var(--bg-deep)]' : 'bg-transparent'}`}>
+    // 停靠窗底留给 Win11 acrylic 材质（勿加不透明底色），悬浮窗本就透明
+    <div className="h-full w-full bg-transparent">
       <SubtitleView state={mirror} onClose={onClose} docked={docked} />
     </div>
   )

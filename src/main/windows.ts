@@ -303,26 +303,27 @@ function dockedBoundsFor(): Electron.Rectangle {
   }
 }
 
-/** 吸附几何判定（±12px 容差）：左右半屏 / 角四分位 / Win11 竖四分位 */
+/** 吸附几何判定（宽松版，覆盖 Win10 半屏/四分位 + Win11 全部分屏布局比例）：
+ *  宽度匹配任一吸附比例（1/6~5/6）且 x 对齐该比例的网格线即可——
+ *  用户手动摆到网格位的窗口同样允许锁定（意图一致：位置已定，点穿无害）。 */
 function isBoundsSnapped(b: Electron.Rectangle): boolean {
-  const { width, height, x, y } = subtitleTargetDisplay().workArea
-  const T = 12
-  const halfW = Math.round(width / 2)
-  const halfH = Math.round(height / 2)
-  const quarterW = Math.round(width / 4)
-  const atLeft = Math.abs(b.x - x) <= T
-  const atRight = Math.abs(b.x + b.width - (x + width)) <= T
-  const atTop = Math.abs(b.y - y) <= T
-  const atBottom = Math.abs(b.y + b.height - (y + height)) <= T
-  if (Math.abs(b.width - halfW) <= T && (atLeft || atRight)) return true
+  const { width, x } = subtitleTargetDisplay().workArea
+  const T = 14
+  for (const frac of [1 / 6, 1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4, 5 / 6]) {
+    const w = Math.round(width * frac)
+    if (Math.abs(b.width - w) > T) continue
+    const cols = Math.round(1 / frac)
+    for (let k = 0; k <= cols; k++) {
+      if (Math.abs(b.x - (x + k * w)) <= T) return true
+    }
+  }
+  // 上下半屏（Win+↑/↓ 全宽）
   if (
-    Math.abs(b.width - halfW) <= T &&
-    Math.abs(b.height - halfH) <= T &&
-    (atLeft || atRight) &&
-    (atTop || atBottom)
+    Math.abs(b.width - width) <= T &&
+    (Math.abs(b.y - subtitleTargetDisplay().workArea.y) <= T ||
+      Math.abs(b.y + b.height - (subtitleTargetDisplay().workArea.y + subtitleTargetDisplay().workArea.height)) <= T)
   )
     return true
-  if (Math.abs(b.width - quarterW) <= T) return true
   return false
 }
 
@@ -344,7 +345,7 @@ export function createDockedWindow(): BrowserWindow {
     show: false,
     frame: false, // 与悬浮窗同观感；thickFrame 默认保留 → 可拖边/Win键吸附
     transparent: false, // ← DWM 吸附资格（透明窗口 Windows 不吸附）
-    backgroundColor: '#0f1419',
+    backgroundColor: '#00000000', // 全透明底：让 Win11 acrylic 材质透出（非 layered，不影响吸附）
     hasShadow: true,
     alwaysOnTop: true,
     resizable: true,
@@ -362,6 +363,14 @@ export function createDockedWindow(): BrowserWindow {
   dockedWindow.setAlwaysOnTop(true, 'screen-saver')
   // 停靠窗无需跨工作区常显（参与 DWM 分屏，由窗口管理器接管层级）
   dockedWindow.setVisibleOnAllWorkspaces(false)
+
+  // Win11 DWM 材质背景：acrylic 半透明不经过 layered 窗口（不牺牲吸附资格），
+  // 渲染层的 rgba 背景叠在材质上＝真透视+文字不透明。失败（旧系统/驱动）静默降级为不透明。
+  try {
+    dockedWindow.setBackgroundMaterial?.('acrylic')
+  } catch {
+    /* material unsupported — fall back to opaque */
+  }
 
   dockedWindow.on('ready-to-show', () => {
     dockedWindow?.show()
@@ -410,7 +419,9 @@ export function isDockedWindowOpen(): boolean {
  *  返回是否成功（未吸附返回 false 供 UI 提示）。 */
 export function setDockedLocked(locked: boolean): boolean {
   if (!dockedWindow || dockedWindow.isDestroyed()) return false
-  if (locked && !isBoundsSnapped(dockedWindow.getBounds())) return false
+  // 最大化也是 DWM 管理排布，允许锁定
+  const arranged = dockedWindow.isMaximized() || isBoundsSnapped(dockedWindow.getBounds())
+  if (locked && !arranged) return false
   if (dockedLocked === locked) return true
   dockedLocked = locked
   dockedWindow.setIgnoreMouseEvents(locked, { forward: true })

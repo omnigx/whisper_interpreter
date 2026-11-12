@@ -105,15 +105,6 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-/** 停靠窗（不透明窗口）背景混合：bgHex 按 opacity 混向窗口底色 base。
- *  视觉等效悬浮窗的半透明背景——文字层独立，不受影响。 */
-function mixHex(a: string, b: string, t: number): string {
-  const ch = (i: number): number =>
-    Math.round(parseInt(a.slice(i, i + 2), 16) * t + parseInt(b.slice(i, i + 2), 16) * (1 - t))
-  const h = (n: number): string => n.toString(16).padStart(2, '0')
-  return `#${h(ch(1))}${h(ch(3))}${h(ch(5))}`
-}
-
 function loadPrefs(): SubtitleLocalPrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -357,15 +348,9 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
   const isColumnPosition =
     prefs.position === 'left-column' || prefs.position === 'right-column'
 
-  // 停靠窗为不透明窗口（DWM 吸附资格）：半透明背景改为按 opacity 混向
-  // 窗口底色（--bg-deep）的实色——调节效果与悬浮窗同感官，文字层不受影响
-  const dockedBase = (
-    getComputedStyle(document.body).getPropertyValue('--bg-deep') || '#0f1419'
-  ).trim()
-  const rootBg = docked
-    ? mixHex(bgHex, dockedBase, prefs.backgroundOpacity / 100)
-    : hexToRgba(bgHex, prefs.backgroundOpacity / 100)
-
+  // 停靠窗启用 Win11 acrylic 材质背景（windows.ts setBackgroundMaterial）：
+  // 渲染层 rgba 背景叠在材质上 → 真透视（见下方内容/其它窗口），文字不透明，
+  // 且不经过 layered 窗口，DWM 吸附资格保留。与悬浮窗共用同一调节语义。
   return (
     <div
       className="lyric-window group relative flex h-screen w-full select-none flex-col overflow-hidden"
@@ -373,7 +358,7 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        backgroundColor: rootBg
+        backgroundColor: hexToRgba(bgHex, prefs.backgroundOpacity / 100)
       }}
     >
       {/* Full-bleed content — no top padding; overlays may cover text */}
