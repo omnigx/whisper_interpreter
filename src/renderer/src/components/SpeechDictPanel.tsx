@@ -69,23 +69,13 @@ export function SpeechDictPanel({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* 头部：标题 + 收起/展开 + 匹配模式 + 加载（图标按钮） */}
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-2">
+    <>
+      {/* 标题栏：分栏独立 flex 项（shrink-0），收起时天然贴底成抽屉把手 */}
+      <div className="flex shrink-0 items-center justify-between border-y border-[var(--border)] px-4 py-2">
         <span className="text-xs font-medium uppercase tracking-wider text-[var(--source)]">
           语音字典{collapsed && entries.length > 0 ? ` · ${entries.length} 条` : ''}
         </span>
         <div className="flex shrink-0 items-center gap-1.5">
-          {/* 收起/展开（抽屉）图标按钮 */}
-          <button
-            type="button"
-            aria-label={collapsed ? '展开语音字典' : '收起语音字典'}
-            title={collapsed ? '展开语音字典' : '收起语音字典'}
-            onClick={onToggle}
-            className="flex h-6 w-6 items-center justify-center rounded border border-[var(--border)] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]"
-          >
-            <ChevronIcon up={collapsed} />
-          </button>
           {/* 匹配模式图标按钮 */}
           <div ref={modeRef} className="settings-wrapper relative">
             <button
@@ -144,12 +134,24 @@ export function SpeechDictPanel({
           >
             <LoadIcon />
           </button>
+          {/* 收起/展开（抽屉）：固定按钮组最右，后续新增按钮不影响其位置 */}
+          <button
+            type="button"
+            aria-label={collapsed ? '展开语音字典' : '收起语音字典'}
+            title={collapsed ? '展开语音字典' : '收起语音字典'}
+            onClick={onToggle}
+            className="flex h-6 w-6 items-center justify-center rounded border border-[var(--border)] text-[var(--text-muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]"
+          >
+            <ChevronIcon up={collapsed} />
+          </button>
         </div>
       </div>
 
-      {/* 内容区：0fr↔1fr 抽屉收合动画（组件保持挂载，输入框文字不丢失） */}
+      {/* 内容区：分栏独立 flex 项，收起时 grow 归零 + 0fr 双重收合（组件保持挂载，输入框文字不丢失） */}
       <div
-        className="grid min-h-0 flex-1 transition-[grid-template-rows] duration-200 ease-in-out"
+        className={`grid min-h-0 transition-[grid-template-rows,flex-grow] duration-200 ease-in-out ${
+          collapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
+        }`}
         style={{ gridTemplateRows: collapsed ? '0fr' : '1fr' }}
       >
         <div
@@ -193,7 +195,7 @@ export function SpeechDictPanel({
       </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }
 

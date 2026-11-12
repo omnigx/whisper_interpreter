@@ -380,7 +380,12 @@ export function FullSizeMode({
 
       <main className="flex min-h-0 flex-1">
         <section className="flex w-1/2 min-w-0 flex-col border-r border-[var(--border)]">
-          <div className="flex min-h-0 flex-[0.7] flex-col">
+          {/* flex-grow 和恒为 1：收起时 top 补到 1 才能占满全部剩余空间（规范：grow 和 <1 时剩余空间按和缩放） */}
+          <div
+            className={`flex min-h-0 flex-col transition-[flex-grow] duration-200 ease-in-out ${
+              dictCollapsed ? 'flex-1' : 'flex-[0.7]'
+            }`}
+          >
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-2">
             <span className="text-xs font-medium uppercase tracking-wider text-[var(--source)]">
               源语言转写
@@ -453,21 +458,19 @@ export function FullSizeMode({
           </div>
           </div>
 
-          {/* 语音字典（与右侧专业术语对称）；收起时容器释放 30% 份额，标题栏贴底成抽屉把手 */}
-          <div
-            className={`flex flex-col border-t border-[var(--border)] transition-[flex-grow] duration-200 ease-in-out ${
-              dictCollapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
-            }`}
-          >
-            <SpeechDictPanel
-              collapsed={dictCollapsed}
-              onToggle={() => setDictCollapsed((v) => !v)}
-            />
-          </div>
+          {/* 语音字典：标题栏与内容区为分栏独立 flex 项；收起时内容项归零，标题栏贴底成抽屉把手 */}
+          <SpeechDictPanel
+            collapsed={dictCollapsed}
+            onToggle={() => setDictCollapsed((v) => !v)}
+          />
         </section>
 
         <section className="flex w-1/2 min-w-0 flex-col">
-          <div className="flex min-h-0 flex-[0.7] flex-col border-b border-[var(--border)]">
+          <div
+            className={`flex min-h-0 flex-col border-b border-[var(--border)] transition-[flex-grow] duration-200 ease-in-out ${
+              termsCollapsed ? 'flex-1' : 'flex-[0.7]'
+            }`}
+          >
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-2">
               <span className="min-w-0 truncate text-xs font-medium uppercase tracking-wider text-[var(--target)]">
                 目标语言翻译
@@ -581,13 +584,8 @@ export function FullSizeMode({
             </div>
           </div>
 
-          {/* 专业术语：收起时容器释放 30% 份额，标题栏贴底成抽屉把手 */}
-          <div
-            className={`flex flex-col transition-[flex-grow] duration-200 ease-in-out ${
-              termsCollapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
-            }`}
-          >
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-2">
+          {/* 专业术语：标题栏与内容区为分栏独立 flex 项；收起时内容项归零，标题栏贴底成抽屉把手 */}
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-2">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-[var(--term)]">
                   专业术语（异步）
@@ -605,15 +603,6 @@ export function FullSizeMode({
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                <button
-                  type="button"
-                  aria-label={termsCollapsed ? '展开专业术语' : '收起专业术语'}
-                  title={termsCollapsed ? '展开专业术语' : '收起专业术语'}
-                  onClick={() => setTermsCollapsed((v) => !v)}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-[var(--border)] text-[var(--text-muted)] transition hover:border-[var(--term)] hover:text-[var(--term)]"
-                >
-                  <ChevronIcon up={termsCollapsed} />
-                </button>
                 <button
                   type="button"
                   title={
@@ -658,11 +647,23 @@ export function FullSizeMode({
                     e.target.value = ''
                   }}
                 />
+                {/* 收起/展开（抽屉）：固定按钮组最右，后续新增按钮不影响其位置 */}
+                <button
+                  type="button"
+                  aria-label={termsCollapsed ? '展开专业术语' : '收起专业术语'}
+                  title={termsCollapsed ? '展开专业术语' : '收起专业术语'}
+                  onClick={() => setTermsCollapsed((v) => !v)}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-[var(--border)] text-[var(--text-muted)] transition hover:border-[var(--term)] hover:text-[var(--term)]"
+                >
+                  <ChevronIcon up={termsCollapsed} />
+                </button>
               </div>
             </div>
-            {/* 内容区：0fr↔1fr 抽屉收合动画（TermsPanel 保持挂载，滚动位置不丢） */}
+            {/* 内容区：分栏独立 flex 项，收起时 grow 归零 + 0fr 双重收合（TermsPanel 保持挂载，滚动位置不丢） */}
             <div
-              className="grid min-h-0 flex-1 transition-[grid-template-rows] duration-200 ease-in-out"
+              className={`grid min-h-0 transition-[grid-template-rows,flex-grow] duration-200 ease-in-out ${
+                termsCollapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
+              }`}
               style={{ gridTemplateRows: termsCollapsed ? '0fr' : '1fr' }}
             >
               <div
@@ -678,7 +679,6 @@ export function FullSizeMode({
                 />
               </div>
             </div>
-          </div>
         </section>
       </main>
 
