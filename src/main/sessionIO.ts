@@ -625,6 +625,34 @@ export function registerSessionIoIpc(): void {
 
   ipcMain.handle('recordings:list', () => listRecordingFiles())
 
+  /** 语音字典持久化：terms/stt_dict/default.json */
+  ipcMain.handle('speech-dict:read', () => {
+    try {
+      const dictPath = path.join(projectRoot(), 'terms', 'stt_dict', 'default.json')
+      if (!fs.existsSync(dictPath)) return {}
+      return JSON.parse(fs.readFileSync(dictPath, 'utf8'))
+    } catch {
+      return {}
+    }
+  })
+
+  ipcMain.handle('speech-dict:write', (_event, entries: unknown) => {
+    try {
+      const dir = path.join(projectRoot(), 'terms', 'stt_dict')
+      fs.mkdirSync(dir, { recursive: true })
+      const dictPath = path.join(dir, 'default.json')
+      // 写入前备份旧文件
+      if (fs.existsSync(dictPath)) {
+        const backup = dictPath.replace('.json', `_${Date.now()}.bak.json`)
+        fs.copyFileSync(dictPath, backup)
+      }
+      fs.writeFileSync(dictPath, JSON.stringify(entries, null, 2), 'utf8')
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
   ipcMain.handle('recordings:open-dir', async () => {
     const dir = resolveRecordingDir()
     const err = await shell.openPath(dir)

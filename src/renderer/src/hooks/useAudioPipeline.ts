@@ -21,6 +21,7 @@ import {
   directionLabel
 } from '../services/translationDirection'
 import { detectLanguage } from '../utils/detectLanguage'
+import { applySpeechDict } from '../components/SpeechDictPanel'
 
 /**
  * Detect a Chinese<->English sentence-level language switch inside one text.
@@ -652,6 +653,26 @@ export function useAudioPipeline(): {
         setPartialText('')
         let text = result.text.trim()
         if (!text) return
+
+        // ---- 语音字典后纠 ----
+        // 在所有管线处理（cap-tail/标点分句/语言边界/送翻）之前应用，
+        // 确保转写区和 LLM 输入都使用纠错后的文本
+        {
+          const dict = useAppStore.getState().speechDict
+          if (dict && Object.keys(dict).length > 0) {
+            const { text: corrected, corrections } = applySpeechDict(text, dict)
+            if (corrections.length > 0) {
+              logSessionEvent({
+                module: 'SYS',
+                model_name: 'speech-dict',
+                content: corrections.map((c) => `${c.from}→${c.to}`).join(', '),
+                source_text: text.slice(0, 50),
+                reason: 'stt_dict_applied'
+              })
+              text = corrected
+            }
+          }
+        }
         if (langDiagCountRef.current < 3) {
           langDiagCountRef.current += 1
           logSessionEvent({

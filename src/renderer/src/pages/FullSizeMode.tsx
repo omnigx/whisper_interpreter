@@ -10,6 +10,7 @@ import { HeaderInputSource } from '../components/HeaderInputSource'
 import { HeaderRecordingSettings } from '../components/HeaderRecordingSettings'
 import { LanguageTag } from '../components/LanguageTag'
 import { TermsPanel } from '../components/TermsPanel'
+import { SpeechDictPanel } from '../components/SpeechDictPanel'
 import { WindowControls } from '../components/WindowControls'
 import { useAudioPipeline } from '../hooks/useAudioPipeline'
 import { useContentWheelZoom } from '../hooks/useContentWheelZoom'
@@ -398,7 +399,7 @@ export function FullSizeMode({
           </div>
           <div
             ref={sourceRef}
-            className="panel-scroll min-h-0 flex-1 px-4 py-3"
+            className="panel-scroll min-h-0 flex-[0.7] px-4 py-3"
             style={contentPanelStyle}
             title="Ctrl + 滚轮调节字号"
           >
@@ -444,6 +445,11 @@ export function FullSizeMode({
                 ) : null}
               </>
             )}
+          </div>
+
+          {/* 语音字典（与右侧专业术语对称） */}
+          <div className="flex min-h-0 flex-[0.3] flex-col border-t border-[var(--border)]">
+            <SpeechDictPanel />
           </div>
         </section>
 

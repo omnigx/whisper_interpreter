@@ -58,9 +58,14 @@ interface AppState {
   llmModelLoaded: string | null
   /** Live Ollama model inventory (fetched once at startup + on panel open) */
   ollamaModels: string[]
+  /** STT speech dictionary: from→to corrections applied post-STT */
+  speechDict: Record<string, string>
 
   setDisplay: (partial: Partial<DisplaySettings>) => void
   setOllamaModels: (models: string[]) => void
+  setSpeechDict: (entries: Record<string, string>) => void
+  addSpeechDictEntry: (from: string, to: string) => void
+  removeSpeechDictEntry: (from: string) => void
   setMicSilent: (silent: boolean) => void
   setSttEngineLaunching: (v: boolean) => void
   setDebugModeMirror: (v: boolean) => void
@@ -121,6 +126,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   degraded: false,
   windowMode: 'full',
   ollamaModels: [],
+  speechDict: {},
   micSilent: false,
   sttEngineLaunching: false,
   debugMode: false,
@@ -130,6 +136,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       settings: { ...s.settings, display: { ...s.settings.display, ...partial } }
     })),
+
+  setSpeechDict: (entries) => set({ speechDict: entries }),
+
+  addSpeechDictEntry: (from, to) =>
+    set((s) => ({
+      speechDict: { ...s.speechDict, [from]: to }
+    })),
+
+  removeSpeechDictEntry: (from) =>
+    set((s) => {
+      const next = { ...s.speechDict }
+      delete next[from]
+      return { speechDict: next }
+    }),
 
   setOllamaModels: (models) =>
     set((s) => ({

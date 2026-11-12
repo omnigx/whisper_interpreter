@@ -154,6 +154,14 @@ const api = {
   ): Promise<{ ok: boolean; content?: string; error?: string }> =>
     ipcRenderer.invoke('session-log:read', name, debug === true),
 
+  /** Speech dictionary persistence (terms/stt_dict/default.json) */
+  readSpeechDict: (): Promise<Record<string, string>> =>
+    ipcRenderer.invoke('speech-dict:read'),
+  writeSpeechDict: (
+    entries: Record<string, string>
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('speech-dict:write', entries),
+
   /** Debug mode toggle — logs/recordings go to *_debug subfolders. */
   setDebugMode: (v: boolean): Promise<boolean> =>
     ipcRenderer.invoke('debug-mode:set', v),
