@@ -2,8 +2,7 @@
  * Standalone sanity test for normalizeDictJson (no test framework needed).
  * Run: npx tsx scripts/test_normalize_dict.ts
  */
-import { normalizeDictJson, MAX_DICT_ENTRIES } from '../src/renderer/src/utils/speechDict'
-import { pinyin } from 'pinyin-pro'
+import { normalizeDictJson, applySpeechDictFuzzy, MAX_DICT_ENTRIES } from '../src/renderer/src/utils/speechDict'
 
 let pass = 0
 let fail = 0
@@ -83,28 +82,16 @@ eq(normalizeDictJson(protoJson), {}, 'proto-ish keys dropped, no entries created
 const after = normalizeDictJson(protoJson)
 eq(Object.getPrototypeOf(after) === Object.prototype, true, 'prototype chain untouched')
 
-// 12. 端到端：fuzzy 模式下 target-word 条目纠正同音错字（真实 pinyin 匹配）
-const dict = normalizeDictJson(['固溶', '析出', '铌元素'])
-// simulate applySpeechDictFuzzy core: match pinyin sequence
-function toPin(t: string): string[] { return pinyin(t, { toneType: 'none', type: 'array', nonZh: 'consecutive' }) }
-const text = '这种合金的固荣处理让碳化物吸出'
-const chars = Array.from(text)
-const cp = toPin(text)
-let out = ''
-let i = 0
-while (i < chars.length) {
-  let matched = false
-  for (const from of Object.keys(dict)) {
-    const kp = toPin(from)
-    if (kp.length !== Array.from(from).length) continue
-    if (i + kp.length > chars.length) continue
-    let ok = true
-    for (let j = 0; j < kp.length; j++) if (cp[i + j] !== kp[j]) { ok = false; break }
-    if (ok) { out += dict[from]; i += kp.length; matched = true; break }
-  }
-  if (!matched) { out += chars[i]; i++ }
+// 12. 端到端：fuzzy 模式下 target-word 条目纠正同音错字（直接调用生产函数，
+//     防止手写循环复现逻辑而掩盖生产 bug——2026-11-12 整句丢失事故的教训）
+{
+  const dict = normalizeDictJson(['固溶', '析出', '铌元素'])
+  const r1 = applySpeechDictFuzzy('这种合金的固荣处理让碳化物吸出', dict)
+  eq(r1.text, '这种合金的固溶处理让碳化物析出', 'fuzzy e2e: target-word dict corrects homophones')
+  const r2 = applySpeechDictFuzzy('这种合金的固荣处理让泥元素含量上升', { 固荣: '固溶', 泥元素: '铌元素' })
+  eq(r2.text, '这种合金的固溶处理让铌元素含量上升', 'fuzzy e2e: full sentence preserved with replacements')
+  eq(r2.corrections.length, 2, 'fuzzy e2e: both corrections reported')
 }
-eq(out, '这种合金的固溶处理让碳化物析出', 'fuzzy e2e: target-word dict corrects homophones')
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail > 0 ? 1 : 0)

@@ -92,7 +92,10 @@ export function applySpeechDictFuzzy(
   }
 
   const corrections: Array<{ from: string; to: string }> = []
-  const replaced = new Array(chars.length)
+  // replaced 保留全文：未命中位留原字符，命中位写纠正词（后续被消耗位留空串）。
+  // 旧版未命中位是 undefined 且返回时被 filter 滤掉，导致整句只剩纠正词。
+  const replaced = [...chars]
+  const consumed = new Array<boolean>(chars.length).fill(false)
   let anyMatch = false
 
   for (const [from, to] of Object.entries(entries)) {
@@ -101,11 +104,11 @@ export function applySpeechDictFuzzy(
     const keyLen = keyPinyins.length
 
     for (let i = 0; i <= chars.length - keyLen; i++) {
-      // Skip if already replaced
-      if (replaced[i]) continue
+      // Skip if already consumed by an earlier match
+      if (consumed[i]) continue
       let match = true
       for (let j = 0; j < keyLen; j++) {
-        if (replaced[i + j] || charPinyins[i + j] !== keyPinyins[j]) {
+        if (consumed[i + j] || charPinyins[i + j] !== keyPinyins[j]) {
           match = false
           break
         }
@@ -115,6 +118,7 @@ export function applySpeechDictFuzzy(
         corrections.push({ from: original, to })
         replaced[i] = to
         for (let j = 1; j < keyLen; j++) replaced[i + j] = ''
+        for (let j = 0; j < keyLen; j++) consumed[i + j] = true
         anyMatch = true
         i += keyLen - 1 // skip past this match
       }
@@ -122,5 +126,5 @@ export function applySpeechDictFuzzy(
   }
 
   if (!anyMatch) return { text, corrections: [] }
-  return { text: replaced.filter(c => c !== undefined && c !== '').join(''), corrections }
+  return { text: replaced.join(''), corrections }
 }
