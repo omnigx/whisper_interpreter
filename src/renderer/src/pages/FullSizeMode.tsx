@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useDrawerFreeze } from '../hooks/useDrawerFreeze'
 import { useAppStore } from '../stores/appStore'
 import { AudioControlPanel } from '../components/AudioControlPanel'
 import { fetchOllamaModels, OLLAMA_FALLBACK_MODELS } from '../services/llm'
@@ -73,6 +74,7 @@ export function FullSizeMode({
   // 抽屉收合：左右下方面板独立控制，启动默认展开（不持久化）
   const [dictCollapsed, setDictCollapsed] = useState(false)
   const [termsCollapsed, setTermsCollapsed] = useState(false)
+  const termsDrawerRef = useDrawerFreeze(termsCollapsed)
 
   const {
     devices,
@@ -659,16 +661,18 @@ export function FullSizeMode({
                 </button>
               </div>
             </div>
-            {/* 内容区：分栏独立 flex 项，收起时 grow 归零 + 0fr 双重收合（TermsPanel 保持挂载，滚动位置不丢） */}
+            {/* 内容区：分栏独立 flex 项，收起时 grow 归零 + 0fr 双重收合（TermsPanel 保持挂载，滚动位置不丢）。
+                overflow-hidden 在容器上：收起时内容高度冻结 + 底端锚定，窗口上缘向下扫过从顶部吞没。 */}
             <div
-              className={`grid min-h-0 transition-[grid-template-rows,flex-grow] duration-200 ease-in-out ${
+              className={`grid min-h-0 overflow-hidden transition-[grid-template-rows,flex-grow] duration-200 ease-in-out ${
                 termsCollapsed ? 'grow-0 shrink basis-0' : 'flex-[0.3]'
               }`}
               style={{ gridTemplateRows: termsCollapsed ? '0fr' : '1fr' }}
             >
               <div
-                className={`flex min-h-0 flex-col overflow-hidden transition-opacity duration-150 ${
-                  termsCollapsed ? 'opacity-0' : 'opacity-100'
+                ref={termsDrawerRef}
+                className={`flex min-h-0 flex-col transition-opacity duration-150 ${
+                  termsCollapsed ? 'self-end opacity-0' : 'opacity-100'
                 }`}
               >
                 <TermsPanel
