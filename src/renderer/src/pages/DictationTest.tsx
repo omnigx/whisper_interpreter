@@ -439,12 +439,11 @@ export function DictationTest({ onBack }: DictationTestProps): React.JSX.Element
             <span className="inline-flex h-8 w-[3.25rem]" aria-hidden />
           )}
 
-          {/* 占位：演示 / 清空 */}
+          {/* 真实按钮：演示（自主界面迁入，原占位转正——等宽不变） */}
           <button
             type="button"
-            tabIndex={-1}
-            aria-hidden
-            className="pointer-events-none invisible inline-flex h-8 items-center whitespace-nowrap rounded border border-[var(--border)] px-2.5 text-xs"
+            onClick={() => useAppStore.getState().seedDemoContent()}
+            className="inline-flex h-8 items-center whitespace-nowrap rounded border border-[var(--border)] px-2.5 text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
           >
             演示
           </button>

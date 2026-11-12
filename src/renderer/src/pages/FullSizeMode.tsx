@@ -45,11 +45,16 @@ interface FullSizeModeProps {
   /** Independent subtitle BrowserWindow is open */
   subtitleOpen?: boolean
   onToggleSubtitle?: () => void
+  /** Docked (snappable) subtitle window state + toggle */
+  dockedOpen?: boolean
+  onToggleDocked?: () => void
 }
 
 export function FullSizeMode({
   subtitleOpen = false,
-  onToggleSubtitle
+  onToggleSubtitle,
+  dockedOpen = false,
+  onToggleDocked
 }: FullSizeModeProps): React.JSX.Element {
   const transcripts = useAppStore((s) => s.transcripts)
   const termsCount = useAppStore((s) => s.terms.length)
@@ -60,7 +65,6 @@ export function FullSizeMode({
   const debugMode = useAppStore((s) => s.debugMode === true)
   const sttLinkStatus = useAppStore((s) => s.sttLinkStatus)
   const pipelineStatus = useAppStore((s) => s.pipelineStatus)
-  const seedDemoContent = useAppStore((s) => s.seedDemoContent)
   const clearSession = useAppStore((s) => s.clearSession)
   const settings = useAppStore((s) => s.settings)
   const setTranslationDirection = useAppStore((s) => s.setTranslationDirection)
@@ -325,10 +329,15 @@ export function FullSizeMode({
 
           <button
             type="button"
-            onClick={seedDemoContent}
-            className="inline-flex h-8 items-center whitespace-nowrap rounded border border-[var(--border)] px-2.5 text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
+            onClick={() => onToggleDocked?.()}
+            className={`inline-flex h-8 items-center whitespace-nowrap rounded border px-2.5 text-xs transition ${
+              dockedOpen
+                ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                : 'border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)] hover:border-[var(--accent)]'
+            }`}
+            title="打开/关闭停靠字幕窗口（不透明、可 Windows 分屏吸附）"
           >
-            演示
+            停靠
           </button>
 
           <button

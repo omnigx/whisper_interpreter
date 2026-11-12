@@ -57,6 +57,10 @@ export function useSubtitleBroadcast(enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return
     const unsubOpen = window.whisperApi?.onSubtitleWindowOpened?.(() => push())
-    return () => unsubOpen?.()
+    const unsubDocked = window.whisperApi?.onDockedWindowOpened?.(() => push())
+    return () => {
+      unsubOpen?.()
+      unsubDocked?.()
+    }
   }, [enabled])
 }

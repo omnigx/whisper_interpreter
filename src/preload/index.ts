@@ -43,6 +43,38 @@ const api = {
     return () => ipcRenderer.removeListener('subtitle-window-state', handler)
   },
 
+  /** Docked (snappable) subtitle window — same stream, independent lifecycle */
+  toggleDockedWindow: (isOpen: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('docked:toggle', isOpen),
+
+  isDockedWindowOpen: (): Promise<boolean> => ipcRenderer.invoke('docked:is-open'),
+
+  /** Lock (click-through) — succeeds only when the window is DWM-snapped */
+  setDockedLocked: (locked: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('docked:lock', locked),
+
+  isDockedLocked: (): Promise<boolean> => ipcRenderer.invoke('docked:is-locked'),
+
+  onDockedWindowOpened: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('docked-window-opened', handler)
+    return () => ipcRenderer.removeListener('docked-window-opened', handler)
+  },
+
+  onDockedWindowClosed: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('docked-window-closed', handler)
+    return () => ipcRenderer.removeListener('docked-window-closed', handler)
+  },
+
+  onDockedWindowState: (callback: (isOpen: boolean) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, isOpen: boolean): void => {
+      callback(isOpen)
+    }
+    ipcRenderer.on('docked-window-state', handler)
+    return () => ipcRenderer.removeListener('docked-window-state', handler)
+  },
+
   minimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
   maximizeToggle: (): Promise<boolean> => ipcRenderer.invoke('window:maximize-toggle'),
   isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),

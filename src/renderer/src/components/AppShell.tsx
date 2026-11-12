@@ -16,6 +16,11 @@ function isSubtitleHash(): boolean {
   return h === '/subtitle' || h === 'subtitle'
 }
 
+/** 停靠变体标记（?docked=1）：不透明底 + 关闭走 docked 通道 */
+function isDockedVariant(): boolean {
+  return new URLSearchParams(window.location.search).get('docked') === '1'
+}
+
 const EMPTY_MIRROR: SubtitleMirrorState = {
   partialText: '',
   transcripts: [],
@@ -29,6 +34,7 @@ const EMPTY_MIRROR: SubtitleMirrorState = {
 /** Satellite window: dumb SubtitleView fed only via IPC. */
 function SubtitleSatelliteApp(): React.JSX.Element {
   const [mirror, setMirror] = useState<SubtitleMirrorState>(EMPTY_MIRROR)
+  const [docked] = useState(isDockedVariant)
 
   useEffect(() => {
     const unsub = window.whisperApi?.onSubtitleState?.((state) => {
@@ -38,12 +44,14 @@ function SubtitleSatelliteApp(): React.JSX.Element {
   }, [])
 
   const onClose = useCallback(() => {
-    void window.whisperApi?.toggleSubtitleWindow?.(false)
-  }, [])
+    void (docked
+      ? window.whisperApi?.toggleDockedWindow?.(false)
+      : window.whisperApi?.toggleSubtitleWindow?.(false))
+  }, [docked])
 
   return (
-    <div className="h-full w-full bg-transparent">
-      <SubtitleView state={mirror} onClose={onClose} />
+    <div className={`h-full w-full ${docked ? 'bg-[var(--bg-deep)]' : 'bg-transparent'}`}>
+      <SubtitleView state={mirror} onClose={onClose} docked={docked} />
     </div>
   )
 }
@@ -51,10 +59,11 @@ function SubtitleSatelliteApp(): React.JSX.Element {
 /** Primary window: full UI + broadcast to subtitle satellite. */
 function MainApp(): React.JSX.Element {
   const [subtitleOpen, setSubtitleOpen] = useState(false)
+  const [dockedOpen, setDockedOpen] = useState(false)
 
-  // Only mirror snapshots while the satellite window actually exists —
+  // Only mirror snapshots while a satellite window actually exists —
   // otherwise every store update pays a full structured-clone IPC for nothing.
-  useSubtitleBroadcast(subtitleOpen)
+  useSubtitleBroadcast(subtitleOpen || dockedOpen)
 
   useEffect(() => {
     void bootEngineConfig().then(() => {
@@ -81,16 +90,40 @@ function MainApp(): React.JSX.Element {
     }
   }, [])
 
+  useEffect(() => {
+    void window.whisperApi?.isDockedWindowOpen?.().then((open) => {
+      if (typeof open === 'boolean') setDockedOpen(open)
+    })
+    const unsubState = window.whisperApi?.onDockedWindowState?.((open) => {
+      setDockedOpen(open)
+    })
+    const unsubClosed = window.whisperApi?.onDockedWindowClosed?.(() => {
+      setDockedOpen(false)
+    })
+    return () => {
+      unsubState?.()
+      unsubClosed?.()
+    }
+  }, [])
+
   const toggleSubtitle = useCallback(async () => {
     const next = !subtitleOpen
     setSubtitleOpen(next)
     await window.whisperApi?.toggleSubtitleWindow?.(next)
   }, [subtitleOpen])
 
+  const toggleDocked = useCallback(async () => {
+    const next = !dockedOpen
+    setDockedOpen(next)
+    await window.whisperApi?.toggleDockedWindow?.(next)
+  }, [dockedOpen])
+
   return (
     <FullSizeMode
       subtitleOpen={subtitleOpen}
       onToggleSubtitle={() => void toggleSubtitle()}
+      dockedOpen={dockedOpen}
+      onToggleDocked={() => void toggleDocked()}
     />
   )
 }
@@ -105,6 +138,7 @@ export function AppShell(): React.JSX.Element {
   useEffect(() => {
     if (subtitleRoute) {
       document.body.classList.add('subtitle-body')
+      if (isDockedVariant()) document.body.classList.add('docked-body')
       document.title = 'Whisper Interpreter — Subtitle'
     }
   }, [subtitleRoute])

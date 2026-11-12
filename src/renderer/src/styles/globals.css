@@ -63,6 +63,11 @@ body.subtitle-body {
   background: transparent !important;
 }
 
+/* 停靠变体：不透明底（DWM 吸附资格），覆盖透明底 */
+body.subtitle-body.docked-body {
+  background: var(--bg-deep) !important;
+}
+
 .panel-scroll {
   overflow-y: auto;
   scrollbar-width: thin;

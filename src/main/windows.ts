@@ -44,12 +44,15 @@ function loadMainRenderer(win: BrowserWindow): void {
   }
 }
 
-function loadSubtitleRenderer(win: BrowserWindow): void {
+function loadSubtitleRenderer(win: BrowserWindow, docked = false): void {
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const base = process.env['ELECTRON_RENDERER_URL'].replace(/\/$/, '')
-    win.loadURL(`${base}/#/subtitle`)
+    win.loadURL(docked ? `${base}/?docked=1#/subtitle` : `${base}/#/subtitle`)
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'), { hash: '/subtitle' })
+    win.loadFile(join(__dirname, '../renderer/index.html'), {
+      ...(docked ? { query: { docked: '1' } } : {}),
+      hash: '/subtitle'
+    })
   }
 }
 
@@ -262,6 +265,169 @@ export function isSubtitleWindowOpen(): boolean {
   return Boolean(subtitleWindow && !subtitleWindow.isDestroyed())
 }
 
+// ---------------------------------------------------------------------------
+// 停靠窗口（docked）：与悬浮字幕窗同源同内容的不透明可吸附变体。
+// DWM 吸附资格＝transparent:false（Windows 不吸附透明窗口）；无边框 +
+// thickFrame（默认保留）即可参与 Win+方向 / 拖边吸附。与悬浮窗相互独立，
+// 不互锁（双屏场景：投影悬浮 + 本机停靠）。
+// ---------------------------------------------------------------------------
+let dockedWindow: BrowserWindow | null = null
+let dockedLocked = false
+
+/** 悬浮字幕窗是否占着中下位（几何判定而非 preset——窗口可被自由拖动） */
+function isSubtitleOccupyingBottomCenter(): boolean {
+  if (!subtitleWindow || subtitleWindow.isDestroyed()) return false
+  const b = subtitleWindow.getBounds()
+  const { width, height, x, y } = subtitleTargetDisplay().workArea
+  const cx = b.x + b.width / 2
+  return (
+    cx > x + width * 0.35 &&
+    cx < x + width * 0.65 &&
+    b.y + b.height > y + height * 0.5
+  )
+}
+
+/** 停靠窗默认几何：与字幕窗同一套尺寸（75% 宽 × 标准高），两个锚点——
+ *  字幕窗占中下位时右缘锚定，否则中下居中（与字幕窗默认位重合不冲突：
+ *  两窗独立，用户自行调整）。 */
+function dockedBoundsFor(): Electron.Rectangle {
+  const { width, height, x, y } = subtitleTargetDisplay().workArea
+  const w = subtitleWidth()
+  const h = SUBTITLE_HEIGHTS.standard
+  const rightAnchored = isSubtitleOccupyingBottomCenter()
+  return {
+    x: rightAnchored ? x + width - w : x + Math.round((width - w) / 2),
+    y: y + height - h - 50,
+    width: w,
+    height: h
+  }
+}
+
+/** 吸附几何判定（±12px 容差）：左右半屏 / 角四分位 / Win11 竖四分位 */
+function isBoundsSnapped(b: Electron.Rectangle): boolean {
+  const { width, height, x, y } = subtitleTargetDisplay().workArea
+  const T = 12
+  const halfW = Math.round(width / 2)
+  const halfH = Math.round(height / 2)
+  const quarterW = Math.round(width / 4)
+  const atLeft = Math.abs(b.x - x) <= T
+  const atRight = Math.abs(b.x + b.width - (x + width)) <= T
+  const atTop = Math.abs(b.y - y) <= T
+  const atBottom = Math.abs(b.y + b.height - (y + height)) <= T
+  if (Math.abs(b.width - halfW) <= T && (atLeft || atRight)) return true
+  if (
+    Math.abs(b.width - halfW) <= T &&
+    Math.abs(b.height - halfH) <= T &&
+    (atLeft || atRight) &&
+    (atTop || atBottom)
+  )
+    return true
+  if (Math.abs(b.width - quarterW) <= T) return true
+  return false
+}
+
+export function createDockedWindow(): BrowserWindow {
+  if (dockedWindow && !dockedWindow.isDestroyed()) {
+    dockedWindow.show()
+    dockedWindow.focus()
+    notifyMainDockedOpen(true)
+    return dockedWindow
+  }
+  const b = dockedBoundsFor()
+  dockedWindow = new BrowserWindow({
+    width: b.width,
+    height: b.height,
+    minWidth: SUBTITLE_MIN.width,
+    minHeight: SUBTITLE_MIN.height,
+    x: b.x,
+    y: b.y,
+    show: false,
+    frame: false, // 与悬浮窗同观感；thickFrame 默认保留 → 可拖边/Win键吸附
+    transparent: false, // ← DWM 吸附资格（透明窗口 Windows 不吸附）
+    backgroundColor: '#0f1419',
+    hasShadow: true,
+    alwaysOnTop: true,
+    resizable: true,
+    skipTaskbar: false,
+    title: 'Whisper Interpreter — Docked',
+    webPreferences: {
+      preload: getPreloadPath(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false
+    }
+  })
+
+  dockedWindow.setAlwaysOnTop(true, 'screen-saver')
+  // 停靠窗无需跨工作区常显（参与 DWM 分屏，由窗口管理器接管层级）
+  dockedWindow.setVisibleOnAllWorkspaces(false)
+
+  dockedWindow.on('ready-to-show', () => {
+    dockedWindow?.show()
+    notifyMainDockedOpen(true)
+    // 与字幕窗同机制：让主渲染器推送最新镜像快照
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('docked-window-opened')
+    }
+  })
+
+  dockedWindow.on('closed', () => {
+    dockedWindow = null
+    dockedLocked = false
+    notifyMainDockedOpen(false)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('docked-window-closed')
+    }
+  })
+
+  loadSubtitleRenderer(dockedWindow, true)
+  return dockedWindow
+}
+
+export function closeDockedWindow(): void {
+  if (dockedWindow && !dockedWindow.isDestroyed()) {
+    dockedWindow.close()
+  }
+}
+
+export function toggleDockedWindow(isOpen: boolean): boolean {
+  if (isOpen) {
+    createDockedWindow()
+    return true
+  }
+  closeDockedWindow()
+  return false
+}
+
+export function isDockedWindowOpen(): boolean {
+  return Boolean(dockedWindow && !dockedWindow.isDestroyed())
+}
+
+/** 停靠窗锁定：系统级点穿（锁定后无需拖拽，无悬浮窗的 CSS 方案冲突）。
+ *  仅吸附态允许锁定——未吸附时窗口还需要手动拖放，点穿会使其失控。
+ *  锁定同时冻结几何（resizable=false），解锁恢复 DWM 吸附调整。
+ *  返回是否成功（未吸附返回 false 供 UI 提示）。 */
+export function setDockedLocked(locked: boolean): boolean {
+  if (!dockedWindow || dockedWindow.isDestroyed()) return false
+  if (locked && !isBoundsSnapped(dockedWindow.getBounds())) return false
+  if (dockedLocked === locked) return true
+  dockedLocked = locked
+  dockedWindow.setIgnoreMouseEvents(locked, { forward: true })
+  dockedWindow.setResizable(!locked)
+  return true
+}
+
+export function isDockedLocked(): boolean {
+  return dockedLocked
+}
+
+function notifyMainDockedOpen(isOpen: boolean): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('docked-window-state', isOpen)
+  }
+}
+
 export function createMainWindow(): BrowserWindow {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.focus()
@@ -348,7 +514,23 @@ export function registerWindowIpc(): void {
     if (subtitleWindow && !subtitleWindow.isDestroyed()) {
       subtitleWindow.webContents.send('subtitle:state', state)
     }
+    // 停停靠窗共享同一条字幕流（相互独立，可同开供双屏）
+    if (dockedWindow && !dockedWindow.isDestroyed()) {
+      dockedWindow.webContents.send('subtitle:state', state)
+    }
   })
+
+  ipcMain.handle('docked:toggle', (_event, isOpen: boolean) => {
+    return toggleDockedWindow(Boolean(isOpen))
+  })
+
+  ipcMain.handle('docked:is-open', () => isDockedWindowOpen())
+
+  ipcMain.handle('docked:lock', (_event, locked: boolean) => {
+    return setDockedLocked(Boolean(locked))
+  })
+
+  ipcMain.handle('docked:is-locked', () => isDockedLocked())
 
   // Back-compat
   ipcMain.handle('window:open-subtitle', () => toggleSubtitleWindow(true))
@@ -421,11 +603,18 @@ export function registerWindowIpc(): void {
   /**
    * Locked subtitle = pure overlay: the whole window passes mouse through
    * (events still forwarded so hover/hotspots work). Unlock restores input.
+   * 停靠窗共用本通道（按发送者分发）。
    */
   ipcMain.on('subtitle:set-click-through', (event, ignore: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed() || win !== subtitleWindow) return
-    if (!subtitleLocked) return
+    if (!win || win.isDestroyed()) return
+    if (win === subtitleWindow) {
+      if (!subtitleLocked) return
+    } else if (win === dockedWindow) {
+      if (!dockedLocked) return
+    } else {
+      return
+    }
     win.setIgnoreMouseEvents(Boolean(ignore), { forward: true })
   })
 

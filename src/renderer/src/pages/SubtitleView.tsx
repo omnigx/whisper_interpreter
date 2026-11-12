@@ -22,6 +22,8 @@ interface SubtitleViewProps {
   /** Mirrored state from main window (required in satellite window). */
   state: SubtitleMirrorState
   onClose: () => void
+  /** 停靠变体：DWM 管几何（隐藏位置/高度预设），锁定走 docked 通道且仅吸附态生效 */
+  docked?: boolean
 }
 
 interface SubtitleLocalPrefs {
@@ -164,7 +166,7 @@ function clamp(n: number, min: number, max: number): number {
  * through except the top-right hotspot (buttons), which temporarily lifts
  * click-through while hovered.
  */
-export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.Element {
+export function SubtitleView({ state, onClose, docked = false }: SubtitleViewProps): React.JSX.Element {
   const { partialText, transcripts, translations, isListening } = state
   const chineseFont = state.chineseFont || DEFAULT_CHINESE_FONT
   const westernFont = state.westernFont || DEFAULT_WESTERN_FONT
@@ -195,16 +197,25 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
     savePrefs(prefs)
   }, [prefs])
 
-  // Lock = fixed geometry + mouse click-through (see windows.ts)
+  // Lock = fixed geometry + mouse click-through (see windows.ts)。
+  // 停靠变体走 docked 通道：仅吸附态可锁（主进程几何判定），失败回弹解锁态。
   useEffect(() => {
     if (!isLocked) hotspotActiveRef.current = false
-    window.whisperApi?.setSubtitleLocked?.(isLocked)
-  }, [isLocked])
+    if (docked) {
+      void window.whisperApi?.setDockedLocked?.(isLocked).then((ok) => {
+        if (isLocked && ok === false) setIsLocked(false)
+      })
+    } else {
+      window.whisperApi?.setSubtitleLocked?.(isLocked)
+    }
+  }, [isLocked, docked])
 
-  // Apply placement preset (also runs on mount → restores saved geometry)
+  // Apply placement preset (also runs on mount → restores saved geometry).
+  // 停靠窗几何归 DWM/用户管理，预设不适用（否则会移动悬浮窗）。
   useEffect(() => {
+    if (docked) return
     window.whisperApi?.setSubtitleGeometry?.(prefs.position, prefs.height)
-  }, [prefs.position, prefs.height])
+  }, [prefs.position, prefs.height, docked])
 
   /** Ctrl + wheel font zoom on both scroll panes (passive: false). */
   useEffect(() => {
@@ -462,50 +473,63 @@ export function SubtitleView({ state, onClose }: SubtitleViewProps): React.JSX.E
           }`}
         />
 
-        <button
-          type="button"
-          aria-label="切换字幕位置"
-          title={`字幕位置：${POSITION_LABELS[prefs.position]}（点击切换 → ${POSITION_LABELS[nextPosition]}）`}
-          className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
-            prefs.position === 'bottom-center'
-              ? 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
-              : 'border-[var(--accent)] text-[var(--accent)]'
-          }`}
-          style={{ WebkitAppRegion: 'no-drag' }}
-          onClick={cyclePosition}
-        >
-          <PositionIcon position={prefs.position} />
-        </button>
+        {/* 位置/高度预设仅悬浮窗有（停靠窗几何归 DWM/用户管理） */}
+        {!docked && (
+          <>
+            <button
+              type="button"
+              aria-label="切换字幕位置"
+              title={`字幕位置：${POSITION_LABELS[prefs.position]}（点击切换 → ${POSITION_LABELS[nextPosition]}）`}
+              className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
+                prefs.position === 'bottom-center'
+                  ? 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
+                  : 'border-[var(--accent)] text-[var(--accent)]'
+              }`}
+              style={{ WebkitAppRegion: 'no-drag' }}
+              onClick={cyclePosition}
+            >
+              <PositionIcon position={prefs.position} />
+            </button>
 
-        <button
-          type="button"
-          aria-label={prefs.height === 'slim' ? '切换为标准高度' : '切换为精简高度'}
-          aria-pressed={prefs.height === 'slim'}
-          title={
-            isColumnPosition
-              ? prefs.height === 'slim'
-                ? '精简（2/3 屏高）· 点击切换为标准（3/4 屏高）'
-                : '标准（3/4 屏高）· 点击切换为精简（2/3 屏高）'
-              : prefs.height === 'slim'
-                ? '精简高度（每栏约 3 行）· 点击切换为标准'
-                : '标准高度（每栏约 5 行）· 点击切换为精简'
-          }
-          className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
-            prefs.height === 'slim'
-              ? 'border-[var(--accent)] text-[var(--accent)]'
-              : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
-          }`}
-          style={{ WebkitAppRegion: 'no-drag' }}
-          onClick={toggleHeight}
-        >
-          <HeightIcon slim={prefs.height === 'slim'} />
-        </button>
+            <button
+              type="button"
+              aria-label={prefs.height === 'slim' ? '切换为标准高度' : '切换为精简高度'}
+              aria-pressed={prefs.height === 'slim'}
+              title={
+                isColumnPosition
+                  ? prefs.height === 'slim'
+                    ? '精简（2/3 屏高）· 点击切换为标准（3/4 屏高）'
+                    : '标准（3/4 屏高）· 点击切换为精简（2/3 屏高）'
+                  : prefs.height === 'slim'
+                    ? '精简高度（每栏约 3 行）· 点击切换为标准'
+                    : '标准高度（每栏约 5 行）· 点击切换为精简'
+              }
+              className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
+                prefs.height === 'slim'
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
+              }`}
+              style={{ WebkitAppRegion: 'no-drag' }}
+              onClick={toggleHeight}
+            >
+              <HeightIcon slim={prefs.height === 'slim'} />
+            </button>
+          </>
+        )}
 
         <button
           type="button"
           aria-label={isLocked ? '解锁窗口' : '锁定窗口'}
           aria-pressed={isLocked}
-          title={isLocked ? '解锁（可拖动/调整大小）' : '锁定（窗口固定且鼠标穿透，仅按钮可交互）'}
+          title={
+            docked
+              ? isLocked
+                ? '解锁（可拖动/吸附调整）'
+                : '锁定（鼠标穿透，仅按钮可交互）— 需先吸附到分屏位置（Win+方向键或拖到屏幕边缘）'
+              : isLocked
+                ? '解锁（可拖动/调整大小）'
+                : '锁定（窗口固定且鼠标穿透，仅按钮可交互）'
+          }
           className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
             isLocked
               ? 'border-[var(--accent)] text-[var(--accent)]'
