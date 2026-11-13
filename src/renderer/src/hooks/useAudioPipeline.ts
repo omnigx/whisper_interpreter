@@ -59,6 +59,7 @@ import { ensureLlmApiKey } from '../services/secureApiKeys'
 import { abortPendingTermExtract } from '../utils/termExtractControl'
 import { createThrottledEmitter } from '../utils/streamingUpdate'
 import { logSessionEvent } from '../services/sessionLogger'
+import { isEngineBootSettled } from '../services/enginePersistence'
 import { publishMeter } from '../services/meterBus'
 import {
   appendSyncRecordingPcm,
@@ -410,6 +411,12 @@ export function useAudioPipeline(): {
 
   useEffect(() => {
     const identity = `${activeLlmId}::${activeLlmModel}`
+    // 启动阶段（配置恢复）持续刷新基线——恢复后的 identity 变化不算用户切换，
+    // 否则每次启动都会冒一条"切换至 xx 模型"（挂载时读到的是恢复前旧基线）
+    if (!isEngineBootSettled()) {
+      llmIdentityRef.current = identity
+      return
+    }
     if (llmIdentityRef.current === null) {
       llmIdentityRef.current = identity
       return

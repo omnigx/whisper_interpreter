@@ -135,8 +135,20 @@ export async function bootRecordingConfig(): Promise<void> {
 }
 
 /** Boot: restore last save, then hydrate encrypted API keys. */
+/** True once bootEngineConfig() has settled — consumers use it to tell
+ *  boot-time config restoration apart from genuine user changes. */
+let engineBootSettled = false
+
+export function isEngineBootSettled(): boolean {
+  return engineBootSettled
+}
+
 export async function bootEngineConfig(): Promise<void> {
-  restoreEngineConfig()
-  await hydrateApiKeysFromSecureStore()
-  await bootRecordingConfig()
+  try {
+    restoreEngineConfig()
+    await hydrateApiKeysFromSecureStore()
+    await bootRecordingConfig()
+  } finally {
+    engineBootSettled = true
+  }
 }
