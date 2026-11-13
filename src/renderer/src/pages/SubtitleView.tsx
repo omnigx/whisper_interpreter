@@ -545,8 +545,8 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
           title={
             docked
               ? isLocked
-                ? '解锁（可拖动/吸附调整）'
-                : '锁定（鼠标穿透，仅按钮可交互）— 需先吸附到分屏位置（Win+方向键或拖到屏幕边缘）'
+                ? '解锁（取消置顶，可拖动/吸附调整）'
+                : '锁定（置顶 + 鼠标穿透，仅按钮可交互）— 需先吸附到分屏位置（Win+方向键或拖到屏幕边缘）'
               : isLocked
                 ? '解锁（可拖动/调整大小）'
                 : '锁定（窗口固定且鼠标穿透，仅按钮可交互）'

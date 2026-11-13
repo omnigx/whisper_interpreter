@@ -347,7 +347,7 @@ export function createDockedWindow(): BrowserWindow {
     transparent: false, // ← DWM 吸附资格（透明窗口 Windows 不吸附）
     backgroundColor: '#0f1419',
     hasShadow: true,
-    alwaysOnTop: true,
+    alwaysOnTop: false, // 默认普通层级（置顶会破坏 DWM 并排组的联动调边，见 setDockedLocked）
     resizable: true,
     skipTaskbar: false,
     title: 'Whisper Interpreter — Docked',
@@ -360,7 +360,6 @@ export function createDockedWindow(): BrowserWindow {
     }
   })
 
-  dockedWindow.setAlwaysOnTop(true, 'screen-saver')
   // 停靠窗无需跨工作区常显（参与 DWM 分屏，由窗口管理器接管层级）
   dockedWindow.setVisibleOnAllWorkspaces(false)
 
@@ -408,9 +407,11 @@ export function isDockedWindowOpen(): boolean {
   return Boolean(dockedWindow && !dockedWindow.isDestroyed())
 }
 
-/** 停靠窗锁定：系统级点穿（锁定后无需拖拽，无悬浮窗的 CSS 方案冲突）。
+/** 停靠窗锁定：置顶 + 系统级点穿 + 冻结几何（三者同属"冻结显示态"）。
+ *  默认开窗不置顶——置顶窗口脱离正常 z 序，会破坏 DWM 并排吸附组的
+ *  共享边界联动调边（拖边界只动一窗的元凶）。锁定＝用户显式要求
+ *  "钉在屏上"，此时置顶合理；解锁全部还原。
  *  仅吸附态允许锁定——未吸附时窗口还需要手动拖放，点穿会使其失控。
- *  锁定同时冻结几何（resizable=false），解锁恢复 DWM 吸附调整。
  *  返回是否成功（未吸附返回 false 供 UI 提示）。 */
 export function setDockedLocked(locked: boolean): boolean {
   if (!dockedWindow || dockedWindow.isDestroyed()) return false
@@ -419,6 +420,7 @@ export function setDockedLocked(locked: boolean): boolean {
   if (locked && !arranged) return false
   if (dockedLocked === locked) return true
   dockedLocked = locked
+  dockedWindow.setAlwaysOnTop(locked, 'screen-saver')
   dockedWindow.setIgnoreMouseEvents(locked, { forward: true })
   dockedWindow.setResizable(!locked)
   return true
