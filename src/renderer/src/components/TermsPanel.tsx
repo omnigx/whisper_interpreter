@@ -52,7 +52,7 @@ export function TermsPanel({
         title="Ctrl + 滚轮调节字号"
       >
         {sorted.length === 0 ? (
-          <p className="px-1 text-sm text-[var(--text-muted)]/70">{emptyHint}</p>
+          <p className="px-1 py-2 text-sm text-[var(--text-muted)]/70">{emptyHint}</p>
         ) : (
           <div className="grid grid-cols-2 gap-2">
             {sorted.map((item) => (
