@@ -191,7 +191,7 @@ export function SpeechDictPanel({
       {/* 词条列表（可滚动） */}
       <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {sorted.length === 0 ? (
-          <p className="py-2 text-[11px] text-[var(--text-muted)]/70">
+          <p className="py-2 text-sm text-[var(--text-muted)]/70">
             输入 原词;纠正词 添加条目，或点击加载导入术语表
           </p>
         ) : (
