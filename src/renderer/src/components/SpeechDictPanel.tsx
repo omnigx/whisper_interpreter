@@ -34,8 +34,23 @@ export function SpeechDictPanel({
   const fileRef = useRef<HTMLInputElement>(null)
   const modeRef = useRef<HTMLDivElement>(null)
   const drawerRef = useDrawerFreeze(collapsed)
+  // 快速添加后的瞬时高亮：key + 序号（序号防同 key 重复添加不触发）
+  const [flash, setFlash] = useState<{ key: string; seq: number } | null>(null)
+  const flashTimer = useRef(0)
+  const listRef = useRef<HTMLDivElement>(null)
 
   useClickOutside(modeRef, modeOpen, () => setModeOpen(false))
+
+  // 新条目滚到列表可视中心（居中＝上下文各半，批量添加时确认插入点最直观）
+  useEffect(() => {
+    if (!flash) return
+    const el = listRef.current?.querySelector(
+      `[data-dict-key="${CSS.escape(flash.key)}"]`
+    )
+    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [flash])
+
+  useEffect(() => () => window.clearTimeout(flashTimer.current), [])
 
   useEffect(() => {
     const load = async (): Promise<void> => {
@@ -53,7 +68,17 @@ export function SpeechDictPanel({
 
   const handleAdd = (): void => {
     const parsed = parseDictInput(input)
-    if (parsed) { addEntry(parsed.from, parsed.to); setInput('') }
+    if (parsed) {
+      addEntry(parsed.from, parsed.to)
+      setInput('')
+      // 标记"刚刚添加"：灰色底纹 3s 后淡出（Word 文字底色的瞬时标记感）
+      const seq = (flash?.seq ?? 0) + 1
+      setFlash({ key: parsed.from, seq })
+      window.clearTimeout(flashTimer.current)
+      flashTimer.current = window.setTimeout(() => {
+        setFlash((f) => (f && f.seq === seq ? null : f))
+      }, 3000)
+    }
   }
 
   /** 安全导入：支持 object（原词→纠正 或 术语→术语）与 array（仅术语）两种格式，
@@ -189,14 +214,20 @@ export function SpeechDictPanel({
           }`}
         >
       {/* 词条列表（可滚动） */}
-      <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-4 py-2">
+      <div ref={listRef} className="panel-scroll min-h-0 flex-1 overflow-y-auto px-4 py-2">
         {sorted.length === 0 ? (
           <p className="py-1 text-sm text-[var(--text-muted)]/70">
             输入 原词;纠正词 添加条目，或点击加载导入术语表
           </p>
         ) : (
           sorted.map(([from, to]) => (
-            <div key={from} className="group flex items-center justify-between gap-2 py-0.5 text-[11px]">
+            <div
+              key={from}
+              data-dict-key={from}
+              className={`group flex items-center justify-between gap-2 rounded px-1 py-0.5 text-[11px] transition-colors duration-500 ${
+                flash?.key === from ? 'bg-gray-400/15' : ''
+              }`}
+            >
               <span className="min-w-0 flex items-center gap-1.5">
                 <span className="truncate text-[var(--text)]">{from}</span>
                 <span className="shrink-0 text-[var(--text-muted)]/50">→</span>
