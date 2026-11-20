@@ -1,4 +1,5 @@
 import type { AudioInputSource } from '@shared/types'
+import { workletModuleUrl } from '../utils/workletUrl'
 import type { PcmPacket, SileroVadHandle, VadSegment } from './pipeline'
 
 const TARGET_RATE = 16000 as const
@@ -151,9 +152,9 @@ export function createAudioCapture(): AudioCaptureHandle {
       await ctx.resume()
     }
 
-    // Worklet URL: served from Vite public/ in dev & build
-    const workletUrl = new URL('/pcm-capture-processor.js', window.location.origin).href
-    await ctx.audioWorklet.addModule(workletUrl)
+    // Worklet URL：dev 从 Vite public 根加载；打包后改指 asarUnpack 镜像
+    // （Chromium 的 addModule 不能从 asar 内加载模块）
+    await ctx.audioWorklet.addModule(workletModuleUrl('/pcm-capture-processor.js'))
 
     gainNode = ctx.createGain()
     volumeNode = ctx.createGain()

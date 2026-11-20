@@ -10,6 +10,7 @@ import {
 } from '../services/stt/sensevoice'
 import { SenseVoiceUtteranceClient } from '../services/stt/sensevoiceUtterance'
 import { publishMeter } from '../services/meterBus'
+import { workletModuleUrl } from '../utils/workletUrl'
 import {
   defaultSttWebsocketUrl,
   normalizeLocalWsUrl,
@@ -353,8 +354,8 @@ export function useAudioTranscriber(
       sourceRef.current = source
 
       try {
-        const workletUrl = new URL('/pcm-capture-processor.js', window.location.origin).href
-        await ctx.audioWorklet.addModule(workletUrl)
+        // 打包模式经 asarUnpack 镜像加载（见 utils/workletUrl）
+        await ctx.audioWorklet.addModule(workletModuleUrl('/pcm-capture-processor.js'))
         const worklet = new AudioWorkletNode(ctx, 'pcm-capture-processor', {
           numberOfInputs: 1,
           numberOfOutputs: 1,

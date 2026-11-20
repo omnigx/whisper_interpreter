@@ -46,6 +46,10 @@
     "files": [
       "out/**/*"
     ],
+    "asarUnpack": [
+      "out/renderer/pcm-capture-processor.js",
+      "out/renderer/vad/**"
+    ],
     "extraResources": [
       {
         "from": "stt_engines",
