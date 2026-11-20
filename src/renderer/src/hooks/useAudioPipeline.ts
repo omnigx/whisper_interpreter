@@ -1375,6 +1375,17 @@ export function useAudioPipeline(): {
     [setAudio]
   )
 
+  // 停靠窗遥控：卫星窗 → 主进程 → 此处路由到对应 live setter
+  // （与主窗控制面板同一入口，含日志与 VAD/STT 实时下发）
+  useEffect(() => {
+    const unsub = window.whisperApi?.onAudioTunableApply?.((p) => {
+      if (p.kind === 'gain') setGainLive(p.value)
+      else if (p.kind === 'maxSentence') setMaxSentenceLive(p.value)
+      else if (p.kind === 'silence') setSilenceLive(p.value)
+    })
+    return () => unsub?.()
+  }, [setGainLive, setMaxSentenceLive, setSilenceLive])
+
   const setInputSourceLive = useCallback(
     async (mode: AudioInputSource) => {
       const prev = useAppStore.getState().settings.audio.inputSource

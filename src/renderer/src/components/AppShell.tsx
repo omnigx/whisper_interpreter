@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SubtitleMirrorState } from '@shared/subtitleSync'
 import {
+  DEFAULT_AUDIO_TUNABLES,
   DEFAULT_CHINESE_FONT,
   DEFAULT_WESTERN_FONT
 } from '@shared/subtitleSync'
@@ -28,7 +29,8 @@ const EMPTY_MIRROR: SubtitleMirrorState = {
   subtitleDisplay: { displayMode: 'count', countLimit: 3, timeLimit: 15 },
   isListening: false,
   chineseFont: DEFAULT_CHINESE_FONT,
-  westernFont: DEFAULT_WESTERN_FONT
+  westernFont: DEFAULT_WESTERN_FONT,
+  audioTunables: DEFAULT_AUDIO_TUNABLES
 }
 
 /** Satellite window: dumb SubtitleView fed only via IPC. */

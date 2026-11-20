@@ -544,6 +544,21 @@ export function registerWindowIpc(): void {
 
   ipcMain.handle('docked:is-locked', () => isDockedLocked())
 
+  /** 停靠窗遥控音频参数：satellite → main（范围校验）→ 主窗渲染器 live setter */
+  ipcMain.on('audio-tunable:set', (_event, payload: unknown) => {
+    const p = payload as { kind?: unknown; value?: unknown }
+    const raw = Number(p?.value)
+    if (!Number.isFinite(raw)) return
+    let value: number
+    if (p.kind === 'gain') value = Math.min(8, Math.max(0.1, raw))
+    else if (p.kind === 'maxSentence') value = Math.round(Math.min(30000, Math.max(5000, raw)))
+    else if (p.kind === 'silence') value = Math.round(Math.min(1500, Math.max(400, raw)))
+    else return
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('audio-tunable:apply', { kind: p.kind, value })
+    }
+  })
+
   // Back-compat
   ipcMain.handle('window:open-subtitle', () => toggleSubtitleWindow(true))
   ipcMain.handle('window:close-subtitle', () => {

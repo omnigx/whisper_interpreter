@@ -17,7 +17,12 @@ function snapshotFromStore(): SubtitleMirrorState {
     isListening: s.isListening,
     pipelineStatus: s.pipelineStatus,
     chineseFont: display.chineseFont,
-    westernFont: display.westernFont
+    westernFont: display.westernFont,
+    audioTunables: {
+      gain: s.settings.audio.gain,
+      maxSentenceMs: s.settings.audio.maxSentenceMs,
+      vadSilenceMs: s.settings.audio.vadSilenceMs
+    }
   }
 }
 
@@ -38,6 +43,10 @@ export function useSubtitleBroadcast(enabled: boolean): void {
   const pipelineStatus = useAppStore((s) => s.pipelineStatus)
   const chineseFont = useAppStore((s) => s.settings.display.chineseFont)
   const westernFont = useAppStore((s) => s.settings.display.westernFont)
+  const audioTunables = useAppStore(
+    (s) =>
+      `${s.settings.audio.gain}|${s.settings.audio.maxSentenceMs}|${s.settings.audio.vadSilenceMs}`
+  )
 
   useEffect(() => {
     if (!enabled) return
@@ -51,7 +60,8 @@ export function useSubtitleBroadcast(enabled: boolean): void {
     isListening,
     pipelineStatus,
     chineseFont,
-    westernFont
+    westernFont,
+    audioTunables
   ])
 
   useEffect(() => {

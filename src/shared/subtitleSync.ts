@@ -15,6 +15,21 @@ export interface SubtitleMirrorState {
   /** Synced from main display settings (content fonts only). */
   chineseFont: string
   westernFont: string
+  /** Live audio tunables (docked remote-control panel display). */
+  audioTunables: AudioTunables
+}
+
+/** Remote-adjustable audio parameters (satellite → main via IPC). */
+export interface AudioTunables {
+  gain: number
+  maxSentenceMs: number
+  vadSilenceMs: number
+}
+
+export const DEFAULT_AUDIO_TUNABLES: AudioTunables = {
+  gain: 1,
+  maxSentenceMs: 15000,
+  vadSilenceMs: 800
 }
 
 export const DEFAULT_CHINESE_FONT =

@@ -35,7 +35,7 @@ export const GAIN_STEPS: number[] = (() => {
   return steps
 })()
 
-function gainToIndex(gain: number): number {
+export function gainToIndex(gain: number): number {
   let best = 0
   let bestDist = Infinity
   for (let i = 0; i < GAIN_STEPS.length; i++) {
@@ -48,7 +48,7 @@ function gainToIndex(gain: number): number {
   return best
 }
 
-function formatGain(g: number): string {
+export function formatGain(g: number): string {
   if (Number.isInteger(g) || Math.abs(g - Math.round(g)) < 1e-9) {
     return `x${Math.round(g)}.0`
   }

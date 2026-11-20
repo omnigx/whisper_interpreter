@@ -55,6 +55,25 @@ const api = {
 
   isDockedLocked: (): Promise<boolean> => ipcRenderer.invoke('docked:is-locked'),
 
+  /** Docked remote control: adjust audio tunables in the main window */
+  setAudioTunable: (
+    kind: 'gain' | 'maxSentence' | 'silence',
+    value: number
+  ): void => {
+    ipcRenderer.send('audio-tunable:set', { kind, value })
+  },
+
+  onAudioTunableApply: (
+    callback: (p: { kind: string; value: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      p: { kind: string; value: number }
+    ): void => callback(p)
+    ipcRenderer.on('audio-tunable:apply', handler)
+    return () => ipcRenderer.removeListener('audio-tunable:apply', handler)
+  },
+
   onDockedWindowOpened: (callback: () => void): (() => void) => {
     const handler = (): void => callback()
     ipcRenderer.on('docked-window-opened', handler)

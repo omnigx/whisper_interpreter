@@ -1,18 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SubtitleMirrorState } from '@shared/subtitleSync'
+import type { AudioTunables, SubtitleMirrorState } from '@shared/subtitleSync'
 import {
+  DEFAULT_AUDIO_TUNABLES,
   DEFAULT_CHINESE_FONT,
   DEFAULT_WESTERN_FONT
 } from '@shared/subtitleSync'
 import {
   LANG_DISPLAY_NAMES,
   SUBTITLE_POSITION_ORDER,
+  VAD_SILENCE_MAX_MS,
+  VAD_SILENCE_MIN_MS,
+  VAD_SILENCE_STEP_MS,
   isSubtitleHeightPreset,
   isSubtitlePositionPreset,
   type SubtitleHeightPreset,
   type SubtitlePositionPreset
 } from '@shared/types'
 import { LanguageTag } from '../components/LanguageTag'
+import { GAIN_STEPS, formatGain, gainToIndex } from '../components/AudioControlPanel'
 import { buildDialogueHistory } from '../utils/dialogueHistory'
 import { detectLanguage } from '../utils/detectLanguage'
 import { buildContentFontFamily } from '../utils/contentFonts'
@@ -177,6 +182,14 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
   /** 停靠窗锁定失败的可见提示（未吸附），数秒后消失 */
   const [lockHint, setLockHint] = useState(false)
   const [prefs, setPrefs] = useState<SubtitleLocalPrefs>(loadPrefs)
+  // ---- 停靠窗音频遥控（增益/片段/断句停顿）----
+  const [audioOpen, setAudioOpen] = useState(false)
+  const [tunables, setTunables] = useState<AudioTunables>(
+    () => state.audioTunables ?? DEFAULT_AUDIO_TUNABLES
+  )
+  /** 本地发送时刻：镜像回写在 800ms 内抑制，防拖拽橡皮筋 */
+  const lastSentRef = useRef(0)
+  const audioRootRef = useRef<HTMLDivElement>(null)
 
   const sourceScrollRef = useRef<HTMLDivElement>(null)
   const targetScrollRef = useRef<HTMLDivElement>(null)
@@ -189,6 +202,24 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
   const hotspotActiveRef = useRef(false)
 
   useClickOutside(settingsRootRef, settingsOpen, () => setSettingsOpen(false))
+  useClickOutside(audioRootRef, audioOpen, () => setAudioOpen(false))
+
+  // 镜像下行同步主窗侧的调整（主窗面板与停靠遥控两处来源一致）
+  useEffect(() => {
+    if (Date.now() - lastSentRef.current < 800) return
+    setTunables(state.audioTunables ?? DEFAULT_AUDIO_TUNABLES)
+  }, [state.audioTunables])
+
+  /** 遥控下发：本地即时显示 + IPC → 主进程（范围校验）→ 主窗 live setter */
+  const applyTunable = (
+    kind: 'gain' | 'maxSentence' | 'silence',
+    value: number,
+    patch: Partial<AudioTunables>
+  ): void => {
+    setTunables((t) => ({ ...t, ...patch }))
+    lastSentRef.current = Date.now()
+    window.whisperApi?.setAudioTunable?.(kind, value)
+  }
 
   useEffect(() => {
     document.body.classList.add('subtitle-body')
@@ -569,6 +600,108 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
           </span>
         )}
 
+        {/* 停靠窗音频遥控（增益/片段/断句停顿），仅在停靠模式显示 */}
+        {docked && (
+          <div
+            ref={audioRootRef}
+            className="settings-wrapper relative pointer-events-auto"
+            style={{ WebkitAppRegion: 'no-drag' }}
+          >
+            <button
+              type="button"
+              aria-label="音频调节"
+              aria-expanded={audioOpen}
+              title="音频调节（增益 / 片段 / 断句停顿 — 实时作用于主窗口）"
+              className={`pointer-events-auto flex h-7 w-7 items-center justify-center rounded border bg-[var(--bg-elevated)] ${
+                audioOpen
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--text)]'
+              }`}
+              style={{ WebkitAppRegion: 'no-drag' }}
+              onClick={() => setAudioOpen((v) => !v)}
+            >
+              <TunersIcon />
+            </button>
+
+            {audioOpen && (
+              <div
+                className="settings-panel absolute right-0 z-40 w-60 rounded border border-[var(--border)] bg-[var(--bg-panel)]/95 p-3 shadow-xl backdrop-blur-sm"
+                style={{ WebkitAppRegion: 'no-drag', top: '100%' }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+                  音频调节
+                </p>
+
+                <label className="mb-2 flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
+                  <span className="flex items-center justify-between">
+                    增益 Gain
+                    <span className="tabular-nums tracking-normal text-[var(--text)]">
+                      {formatGain(tunables.gain)}
+                    </span>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={GAIN_STEPS.length - 1}
+                    step={1}
+                    value={gainToIndex(tunables.gain)}
+                    onChange={(e) => {
+                      const v = GAIN_STEPS[Number(e.target.value)]
+                      if (typeof v === 'number') applyTunable('gain', v, { gain: v })
+                    }}
+                    className="w-full accent-[var(--accent)]"
+                    title="1× 以下按 0.1 细调衰减，1–2× 每 0.25，2.5× 起每 0.5 至 8×"
+                  />
+                </label>
+
+                <label className="mb-2 flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
+                  <span className="flex items-center justify-between">
+                    片段 Segment
+                    <span className="tabular-nums tracking-normal text-[var(--text)]">
+                      {tunables.maxSentenceMs / 1000}s
+                    </span>
+                  </span>
+                  <input
+                    type="range"
+                    min={5}
+                    max={30}
+                    step={1}
+                    value={tunables.maxSentenceMs / 1000}
+                    onChange={(e) => {
+                      const ms = Number(e.target.value) * 1000
+                      applyTunable('maxSentence', ms, { maxSentenceMs: ms })
+                    }}
+                    className="w-full accent-[var(--accent)]"
+                  />
+                </label>
+
+                <label className="mb-1 flex flex-col gap-1 text-[10px] text-[var(--text-muted)]">
+                  <span className="flex items-center justify-between">
+                    断句停顿 Silence
+                    <span className="tabular-nums tracking-normal text-[var(--text)]">
+                      {(tunables.vadSilenceMs / 1000).toFixed(2)}s
+                    </span>
+                  </span>
+                  <input
+                    type="range"
+                    min={VAD_SILENCE_MIN_MS / 1000}
+                    max={VAD_SILENCE_MAX_MS / 1000}
+                    step={VAD_SILENCE_STEP_MS / 1000}
+                    value={tunables.vadSilenceMs / 1000}
+                    onChange={(e) => {
+                      const ms = Number(e.target.value) * 1000
+                      applyTunable('silence', ms, { vadSilenceMs: ms })
+                    }}
+                    className="w-full accent-[var(--accent)]"
+                    title="同一数值也用作标点切句的确认窗口（快语速 0.4–0.6s；一般 0.7–0.9s；慢速 1.0–1.5s）"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        )}
+
         <div
           ref={settingsRootRef}
           className="settings-wrapper relative pointer-events-auto"
@@ -728,6 +861,29 @@ export function SubtitleView({ state, onClose, docked = false }: SubtitleViewPro
         </button>
       </div>
     </div>
+  )
+}
+
+/** 音频调节图标（三滑杆） */
+function TunersIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
+      <line x1="4" y1="18" x2="20" y2="18" />
+      <circle cx="7" cy="18" r="2" fill="currentColor" stroke="none" />
+    </svg>
   )
 }
 
