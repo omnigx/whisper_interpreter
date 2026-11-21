@@ -38,6 +38,10 @@ export function SpeechDictPanel({
   const [flash, setFlash] = useState<{ key: string; seq: number } | null>(null)
   const flashTimer = useRef(0)
   const listRef = useRef<HTMLDivElement>(null)
+  /** 会话镜像基线：null＝启动加载未完成（不写文件）；加载后＝上次写入内容 */
+  const dictWriterBaselineRef = useRef<Record<string, string> | null>(null)
+  /** 会话文件首写日志只记一次 */
+  const sessionLoggedRef = useRef(false)
 
   useClickOutside(modeRef, modeOpen, () => setModeOpen(false))
 
@@ -59,9 +63,49 @@ export function SpeechDictPanel({
         const clean = normalizeDictJson(result)
         if (Object.keys(clean).length > 0) setDict(clean, 'default.json')
       } catch { /* ignore */ }
+      finally {
+        // 武装会话镜像写入：基线＝启动加载后的字典（加载本身不触发写文件）
+        dictWriterBaselineRef.current = { ...useAppStore.getState().speechDict }
+      }
     }
     void load()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- 会话字典镜像：任何变更（quick-add/删除/加载文件）防抖写入
+  // terms/stt_dict/<logStamp>_stt_dict.json（与同场 logs/recording 同族）。
+  // 懒创建：无变更不产生文件；启动加载在武装前，不触发写入。
+  useEffect(() => {
+    let timer = 0
+    const flush = (): void => {
+      timer = 0
+      const entries = { ...useAppStore.getState().speechDict }
+      dictWriterBaselineRef.current = entries
+      void window.whisperApi?.writeSpeechDictSession?.(entries).then((r) => {
+        if (r?.ok && r.name && !sessionLoggedRef.current) {
+          sessionLoggedRef.current = true
+          logSessionEvent({
+            module: 'SYS',
+            model_name: 'speech-dict',
+            content: `session mirror → ${r.name} · ${Object.keys(entries).length} entries`,
+            reason: 'dict_session_file',
+            dict_source: r.name,
+            dict_entries: Object.keys(entries).length
+          })
+        }
+      })
+    }
+    const unsub = useAppStore.subscribe((s, prev) => {
+      if (s.speechDict === prev.speechDict) return
+      if (dictWriterBaselineRef.current === null) return // 启动加载未完成
+      if (JSON.stringify(s.speechDict) === JSON.stringify(dictWriterBaselineRef.current)) return
+      window.clearTimeout(timer)
+      timer = window.setTimeout(flush, 800)
+    })
+    return () => {
+      window.clearTimeout(timer)
+      unsub()
+    }
+  }, [])
 
   const entries = Object.entries(dict ?? {})
   const sorted = [...entries].sort(([a], [b]) => a.localeCompare(b))

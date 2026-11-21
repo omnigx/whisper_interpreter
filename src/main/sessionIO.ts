@@ -662,6 +662,27 @@ export function registerSessionIoIpc(): void {
     }
   })
 
+  /**
+   * 会话字典镜像：terms/stt_dict/<logStamp>_stt_dict.json——与同场 logs/
+   * recording 同族时间戳（一场会的三件套对齐）。懒创建：仅在渲染层发生
+   * 字典变更后调用，空会话不产生文件。default.json 仍为启动加载的基础表。
+   */
+  ipcMain.handle('speech-dict:write-session', (_event, entries: unknown) => {
+    try {
+      const dir = path.join(projectRoot(), 'terms', 'stt_dict')
+      fs.mkdirSync(dir, { recursive: true })
+      const name = `${logStamp}_stt_dict.json`
+      fs.writeFileSync(
+        path.join(dir, name),
+        JSON.stringify(entries, null, 2),
+        'utf8'
+      )
+      return { ok: true, name }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+
   ipcMain.handle('recordings:open-dir', async () => {
     const dir = resolveRecordingDir()
     const err = await shell.openPath(dir)

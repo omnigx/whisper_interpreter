@@ -55,6 +55,12 @@ const api = {
 
   isDockedLocked: (): Promise<boolean> => ipcRenderer.invoke('docked:is-locked'),
 
+  /** Session-scoped dict mirror: terms/stt_dict/<logStamp>_stt_dict.json */
+  writeSpeechDictSession: (
+    entries: Record<string, string>
+  ): Promise<{ ok: boolean; name?: string; error?: string }> =>
+    ipcRenderer.invoke('speech-dict:write-session', entries),
+
   /** Docked remote control: adjust audio tunables in the main window */
   setAudioTunable: (
     kind: 'gain' | 'maxSentence' | 'silence',
