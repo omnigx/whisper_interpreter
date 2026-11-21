@@ -103,6 +103,8 @@ export function useAudioPipeline(): {
   const { cloudReachable, network } = useNetworkMonitor()
 
   const captureRef = useRef<AudioCaptureHandle | null>(null)
+  /** 外语单字拦截的语言先验环（最近 final 的语言与时刻，5 分钟窗口） */
+  const recentLangsRef = useRef<Array<{ lang: string; at: number }>>([])
   const vadRef = useRef<(SileroVadHandle & { dispose?: () => void }) | null>(null)
   const sttRef = useRef<SttClient | null>(null)
   const llmRef = useRef<LlmClient | null>(null)
@@ -784,6 +786,37 @@ export function useAudioPipeline(): {
             text = cleaned
           }
         }
+        // ---- 外语单字拦截（上下文语言先验）----
+        // SenseVoice 偶发把中文语气音节误识为假名/谚文单字（lang_tag 同步错，
+        // ja/yue）。判据用文字系统（确定性）而非 lang_tag（错识来源）：
+        // ≤2 字非汉字非拉丁字符 + 近期上文以中文为主（≥4 条且至多 1 条非 zh）
+        // → 整段静默丢弃（不入转写、不送翻——原 junk 过滤只在送翻层拦，
+        // 转写区仍显示垃圾）。真实英文缩写（拉丁）与中文短答（汉字）不在
+        // 拦截范围；先验不足 4 条不启用；被拦条目不回灌先验。
+        {
+          const core = text
+            .normalize('NFKC')
+            .replace(/[\s\p{P}\p{S}]+/gu, '')
+          if (
+            core.length > 0 &&
+            core.length <= 2 &&
+            !/[一-鿿]/.test(core) &&
+            !/[A-Za-z0-9]/.test(core)
+          ) {
+            const cutoff = Date.now() - 300_000
+            const recent = recentLangsRef.current.filter((r) => r.at >= cutoff)
+            const zh = recent.filter((r) => r.lang === 'zh').length
+            if (recent.length >= 4 && zh >= recent.length - 1) {
+              logSessionEvent({
+                module: 'SYS',
+                model_name: '',
+                content: `外语单字拦截: ${text}`,
+                reason: 'foreign_singleton_dropped'
+              })
+              return
+            }
+          }
+        }
         if (langDiagCountRef.current < 3) {
           langDiagCountRef.current += 1
           logSessionEvent({
@@ -800,6 +833,11 @@ export function useAudioPipeline(): {
         const trustedTag = rawTag === 'zh' || rawTag === 'en' ? rawTag : null
         const lowConf = rawTag !== '' && trustedTag === null
         const lang = trustedTag ?? detectLanguage(text)
+        // 语言先验环形缓冲（外语单字拦截用；被拦截条目不经过此处，天然不回灌）
+        recentLangsRef.current = [
+          ...recentLangsRef.current,
+          { lang, at: Date.now() }
+        ].slice(-8)
         // 15s 上限段的短尾并句：上限切断后 ≤5s 内出现的 ≤10 字 / ≤3s 短段，
         // 视为同一句的尾巴，并回前段重译（替换旧译文，转写行合并显示）
         if (capCutPendingRef.current) {
